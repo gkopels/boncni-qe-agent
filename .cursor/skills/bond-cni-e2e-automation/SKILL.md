@@ -1,9 +1,9 @@
 ---
-name: metallb-e2e-automation
-description: Add MetalLB upstream-style e2e tests under e2etest/ on the user's GitHub fork branch and validate via GitHub Actions; no PR unless user requests. Use in QE Phase 4.
+name: bond-cni-e2e-automation
+description: Add Bond CNI upstream-style e2e tests on the user's GitHub fork branch and validate via GitHub Actions; no PR unless user requests. Use in QE Phase 4.
 ---
 
-# MetalLB e2e test automation (Phase 4)
+# Bond CNI e2e test automation (Phase 4)
 
 ## When to use
 
@@ -49,10 +49,10 @@ Cleanup when done with local KIND: `inv dev-env-cleanup`.
 
 ## Analysis clone vs automation clone
 
-- **Read-only code analysis** for plans remains under `.cursor/workspaces/metallb-repo-analysis/` per project rules.
+- **Read-only code analysis** for plans remains under `.cursor/workspaces/bond-cni-repo-analysis/` per project rules.
 - **Automation work** happens in the **user-provided clone path** (for example a separate directory); do not conflate the two unless the user wants a single workspace.
 
 ## Constraints
 
 - No credentials in commits; use CI secrets patterns upstream already defines.
-- Respect `references/metallb-qe-lifecycle-reference.mdc` phase ordering.
+- Respect `references/bond-cni-qe-lifecycle-reference.mdc` phase ordering.

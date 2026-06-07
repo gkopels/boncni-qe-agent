@@ -1,9 +1,9 @@
 ---
-name: metallb-manual-test-execution
-description: Run finalized manual/Polarion MetalLB test cases against an OpenShift cluster using KUBECONFIG and report results in a table. Use in QE Phase 3 after detailed plan and Polarion testcase IDs exist.
+name: bond-cni-manual-test-execution
+description: Run finalized manual/Polarion Bond CNI test cases against an OpenShift cluster using KUBECONFIG and report results in a table. Use in QE Phase 3 after detailed plan and Polarion testcase IDs exist.
 ---
 
-# MetalLB manual test execution (Phase 3)
+# Bond CNI manual test execution (Phase 3)
 
 ## When to use
 
@@ -42,4 +42,4 @@ The user is in **Phase 3** of the MetalLB QE lifecycle: **test case first execut
 ## Constraints
 
 - Do not store kubeconfig or tokens in the workspace or in Google Docs.
-- Align with `references/metallb-qe-lifecycle-reference.mdc` for phase gates.
+- Align with `references/bond-cni-qe-lifecycle-reference.mdc` for phase gates.

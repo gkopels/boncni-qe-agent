@@ -13,7 +13,7 @@
 
 - OpenShift/Kubernetes version:
 - MetalLB / metallb-operator / frr-k8s versions (if known):
-- **QE source context (for writing and for debugging cluster runs):** current clones of upstream `metallb-operator`, `metallb`, and `frr-k8s` (see `.cursor/workspaces/metallb-repo-analysis/` and the detailed test-plan skill for GitHub URLs). When validating on a test cluster, align observed behavior with reconcilers/CRDs in those repos.
+- **QE source context (for writing and for debugging cluster runs):** current clones of upstream `metallb-operator`, `metallb`, and `frr-k8s` (see `.cursor/workspaces/bond-cni-repo-analysis/` and the detailed test-plan skill for GitHub URLs). When validating on a test cluster, align observed behavior with reconcilers/CRDs in those repos.
 - Default CLI: `oc` (use `kubectl` where equivalent)
 - MetalLB namespace for this plan: `metallb-system` (change here only if the Epic targets a different layout)
 - Assumptions (network, workers, privileged FRR, etc.):

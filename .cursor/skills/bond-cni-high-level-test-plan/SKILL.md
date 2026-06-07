@@ -1,9 +1,9 @@
 ---
-name: metallb-high-level-test-plan
-description: Generate a high level test plan for MetalLB features using a Jira Epic key, linked design docs/PRs, and deep code analysis across metallb-operator, metallb, and frr-k8s. Use when the user asks for a high-level test plan, QA scope, or test cases for a MetalLB/OpenShift feature.
+name: bond-cni-high-level-test-plan
+description: Generate a high-level test plan for Bond CNI / OpenShift networking features using a Jira Epic key, linked design docs/PRs, and deep code analysis of bond-cni source. Use when the user asks for a high-level test plan, QA scope, or test cases for a Bond CNI or OpenShift networking feature.
 ---
 
-# MetalLB High-Level Test Plan
+# Bond CNI High-Level Test Plan
 
 ## Purpose
 
@@ -32,7 +32,7 @@ This skill covers **Phase 1** only. Phase 1 has **two agent steps** separated by
 
 After publish, the user may edit the Doc and run **peer QE + Epic assignee (developer) review** until satisfied.
 
-**Do not** start the **detailed** test plan (`metallb-detailed-test-plan`), Phase 3 execution, Polarion publish for procedures, or e2e automation **for the same Epic** until the user **explicitly states** the high-level plan is **approved** (with or without changes from the original agent draft).
+**Do not** start the **detailed** test plan (`bond-cni-detailed-test-plan`), Phase 3 execution, Polarion publish for procedures, or e2e automation **for the same Epic** until the user **explicitly states** the high-level plan is **approved** (with or without changes from the original agent draft).
 
 ## Workflow
 
@@ -43,11 +43,11 @@ After publish, the user may edit the Doc and run **peer QE + Epic assignee (deve
 
 2. **Create temporary analysis workspace**
    - Clone into a project-local analysis folder (do not modify user repositories):
-     - `.cursor/workspaces/metallb-repo-analysis/`
+     - `.cursor/workspaces/bond-cni-repo-analysis/`
    - Use one subfolder per repository:
-     - `.cursor/workspaces/metallb-repo-analysis/metallb-operator`
-     - `.cursor/workspaces/metallb-repo-analysis/metallb`
-     - `.cursor/workspaces/metallb-repo-analysis/frr-k8s`
+     - `.cursor/workspaces/bond-cni-repo-analysis/metallb-operator`
+     - `.cursor/workspaces/bond-cni-repo-analysis/metallb`
+     - `.cursor/workspaces/bond-cni-repo-analysis/frr-k8s`
    - If the folder already exists, refresh with `git fetch` / `git pull` (or reclone if corrupt).
    - Keep this folder out of normal source edits; it is analysis-only.
    - Repositories to clone:
@@ -163,4 +163,4 @@ For references, include Jira link, design docs, and key PR/code links used in an
 
 ## Follow-on: detailed manual plan
 
-When the user needs **executable** steps (YAML manifests and `oc`/`kubectl` commands per test case), use the companion skill **`metallb-detailed-test-plan`** (`.cursor/skills/metallb-detailed-test-plan/SKILL.md`) and publish via `scripts/validate_and_publish_detailed_test_plan.sh`—**only after** the user confirms **Phase 1 approval** per `references/metallb-test-plan-workflow.mdc` and `.cursor/skills/metallb-detailed-test-plan/references/metallb-qe-lifecycle.mdc`.
+When the user needs **executable** steps (YAML manifests and `oc`/`kubectl` commands per test case), use the companion skill **`bond-cni-detailed-test-plan`** (`.cursor/skills/bond-cni-detailed-test-plan/SKILL.md`) and publish via `scripts/validate_and_publish_detailed_test_plan.sh`—**only after** the user confirms **Phase 1 approval** per `references/bond-cni-test-plan-workflow.mdc` and `.cursor/skills/bond-cni-detailed-test-plan/references/bond-cni-qe-lifecycle.mdc`.

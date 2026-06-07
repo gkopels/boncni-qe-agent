@@ -1,9 +1,9 @@
 ---
-name: metallb-detailed-test-plan
-description: Expand MetalLB/OpenShift high-level test cases into a detailed manual test plan with copy-paste YAML manifests and oc/kubectl commands, grounded in Jira, design docs, and metallb-operator, metallb, and frr-k8s code. Use when the user asks for a detailed test plan, step-by-step test instructions, executable test cases, or YAML/commands for manual QA.
+name: bond-cni-detailed-test-plan
+description: Expand Bond CNI / OpenShift networking high-level test cases into a detailed manual test plan with copy-paste YAML manifests and oc/kubectl commands, grounded in Jira, design docs, and bond-cni source code. Use when the user asks for a detailed test plan, step-by-step test instructions, executable test cases, or YAML/commands for manual QA.
 ---
 
-# MetalLB Detailed Test Plan
+# Bond CNI Detailed Test Plan
 
 ## Purpose
 
@@ -16,7 +16,7 @@ Turn each high-level test case into **operator-ready manual steps**: concrete Ku
 - Optional: **`KUBECONFIG`** (path or env) for a dedicated **test OpenShift** cluster
 - Optional: target OpenShift/Kubernetes version, namespace conventions, or IP/pool constraints
 
-**Resolution:** Epic key and Doc URL(s) come from the **user message first**; optional fallbacks are `METALLB_JIRA_EPIC_KEY` and pasted/linked Google URLs. For cluster work, **export `KUBECONFIG`** to the path the user gave (or they can `export` it themselves), then run `oc whoami` or `scripts/check_cluster_context.sh` before executing steps. If neither Epic nor **approved** high-level plan context is available, ask for the Epic key and whether Phase 1 is **approved** before proceeding (see `references/metallb-qe-lifecycle.mdc`).
+**Resolution:** Epic key and Doc URL(s) come from the **user message first**; optional fallbacks are `METALLB_JIRA_EPIC_KEY` and pasted/linked Google URLs. For cluster work, **export `KUBECONFIG`** to the path the user gave (or they can `export` it themselves), then run `oc whoami` or `scripts/check_cluster_context.sh` before executing steps. If neither Epic nor **approved** high-level plan context is available, ask for the Epic key and whether Phase 1 is **approved** before proceeding (see `references/bond-cni-qe-lifecycle.mdc`).
 
 **Publish title:** `scripts/validate_and_publish_detailed_test_plan.sh "Detailed Test Plan - <JIRA_KEY> - <Feature Name>"` must use the user’s Epic key in `<JIRA_KEY>`.
 
@@ -24,10 +24,10 @@ Turn each high-level test case into **operator-ready manual steps**: concrete Ku
 
 - **Gate:** Only run this skill after the user confirms **high-level plan approval**.
 - **Product repos (mandatory context):** Detailed authoring **and** any validation on a real OpenShift cluster (`KUBECONFIG`) must use the **same three upstream repositories** as the high-level skill (clone URLs below). Refresh them before cluster work so reconciler logic, CRD schemas, admission rules, and status fields match what you infer from `oc` output. When a step **fails** on the cluster, debug by correlating symptoms with **source** in the right repo—for example operator wiring vs core MetalLB reconciliation vs frr-k8s BGP/FRR CR handling—not only logs on the cluster.
-- **With `KUBECONFIG`:** Run **all** proposed test cases on the cluster; capture **observed** results and align **Expected:** lines with reality. Note per-step outcomes for early defect detection. **Before** executing steps, ensure `.cursor/workspaces/metallb-repo-analysis/` contains current checkouts of all three repos (see **Workflow** step 3).
-- **Triage:** If behavior is wrong, use Jira + code under `.cursor/workspaces/metallb-repo-analysis/` (search controllers, webhooks, `api/` types, and feature gates across **metallb-operator**, **metallb**, and **frr-k8s**) to decide **product bug** vs **procedure error**. Cite concrete file or package paths when explaining root cause. **Bug:** file **Jira** with `project = OCPBUGS`, **component = `Networking / Metal LB`**, attach logs/evidence. **Procedure:** fix steps/YAML/commands and re-run on cluster before publishing/updating the Doc.
-- **Polarion:** Publish testcase work items + LiveDoc under **OpenShift `CNF`** (default Polarion space **`CNF`**) **only after** the user **approves** the detailed Google Doc. Use `metallb-polarion-test-publish` and `.cursor/skills/metallb-polarion-test-publish/references/metallb-polarion-livedoc-workflow.mdc`. Do not skip full home-page HTML embedding.
-- **Next phase:** Do not run **Phase 3** (`metallb-manual-test-execution`) or **Phase 4** (`metallb-e2e-automation`) until the user explicitly approves moving on (and Polarion is done or explicitly deferred).
+- **With `KUBECONFIG`:** Run **all** proposed test cases on the cluster; capture **observed** results and align **Expected:** lines with reality. Note per-step outcomes for early defect detection. **Before** executing steps, ensure `.cursor/workspaces/bond-cni-repo-analysis/` contains current checkouts of all three repos (see **Workflow** step 3).
+- **Triage:** If behavior is wrong, use Jira + code under `.cursor/workspaces/bond-cni-repo-analysis/` (search controllers, webhooks, `api/` types, and feature gates across **metallb-operator**, **metallb**, and **frr-k8s**) to decide **product bug** vs **procedure error**. Cite concrete file or package paths when explaining root cause. **Bug:** file **Jira** with `project = OCPBUGS`, **component = `Networking / Metal LB`**, attach logs/evidence. **Procedure:** fix steps/YAML/commands and re-run on cluster before publishing/updating the Doc.
+- **Polarion:** Publish testcase work items + LiveDoc under **OpenShift `CNF`** (default Polarion space **`CNF`**) **only after** the user **approves** the detailed Google Doc. Use `bond-cni-polarion-test-publish` and `.cursor/skills/bond-cni-polarion-test-publish/references/bond-cni-polarion-livedoc-workflow.mdc`. Do not skip full home-page HTML embedding.
+- **Next phase:** Do not run **Phase 3** (`bond-cni-manual-test-execution`) or **Phase 4** (`bond-cni-e2e-automation`) until the user explicitly approves moving on (and Polarion is done or explicitly deferred).
 
 ## Workflow
 
@@ -36,10 +36,10 @@ Turn each high-level test case into **operator-ready manual steps**: concrete Ku
    - If not, derive cases from Jira acceptance criteria and code analysis (same quality bar as the high-level skill: happy path, negative/validation, reconciliation/state).
 
 2. **Collect Jira and doc context**
-   - **Mandatory:** `adapters/jira_adapter.py` with `.env` `JIRA_*` credentials (`JiraAdapter.from_env()` — same policy as `metallb-high-level-test-plan` and `AGENTS.md`). Do not use Atlassian MCP for Jira unless the user explicitly requests it or credentials are missing.
+   - **Mandatory:** `adapters/jira_adapter.py` with `.env` `JIRA_*` credentials (`JiraAdapter.from_env()` — same policy as `bond-cni-high-level-test-plan` and `AGENTS.md`). Do not use Atlassian MCP for Jira unless the user explicitly requests it or credentials are missing.
 
-3. **Refresh analysis repos** (same URLs and layout as `metallb-high-level-test-plan`)
-   - Parent directory: `.cursor/workspaces/metallb-repo-analysis/`
+3. **Refresh analysis repos** (same URLs and layout as `bond-cni-high-level-test-plan`)
+   - Parent directory: `.cursor/workspaces/bond-cni-repo-analysis/`
    - **Repositories to clone or update** (shallow clone or `git pull`):
      - `https://github.com/metallb/metallb-operator`
      - `https://github.com/metallb/metallb`
@@ -81,7 +81,7 @@ Turn each high-level test case into **operator-ready manual steps**: concrete Ku
 
 10. **Response to the user**
    - Return **only the Google Docs URL** unless the user explicitly asked for local files or pasted content.
-   - Do **not** publish to **Polarion** in the same turn unless the user has **already** stated the detailed plan is **approved** for Polarion (see `references/metallb-qe-lifecycle.mdc`).
+   - Do **not** publish to **Polarion** in the same turn unless the user has **already** stated the detailed plan is **approved** for Polarion (see `references/bond-cni-qe-lifecycle.mdc`).
 
 ## Quality Constraints
 

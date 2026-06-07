@@ -13,7 +13,7 @@ fi
 TITLE="$1"
 # shellcheck source=lib/agent_tmp_dir.sh
 source "$ROOT_DIR/scripts/lib/agent_tmp_dir.sh"
-TMP_MD="$(mktemp "$(metallb_agent_tmp_dir "$ROOT_DIR")/metallb-test-plan-XXXXXX.md")"
+TMP_MD="$(mktemp "$(bond_cni_agent_tmp_dir "$ROOT_DIR")/bond-cni-test-plan-XXXXXX.md")"
 trap 'rm -f "$TMP_MD"' EXIT
 
 cat > "$TMP_MD"

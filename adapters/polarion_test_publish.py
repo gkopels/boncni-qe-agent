@@ -30,11 +30,11 @@ def merge_traceability_from_env(
     Precedence for each field:
 
     1. ``POLARION_TRACE_*`` in the merged env (highest).
-    2. ``METALLB_*`` convenience keys when the corresponding ``POLARION_TRACE_*`` was **not** set.
+    2. ``BOND_CNI_*`` (or legacy ``METALLB_*``) convenience keys when the corresponding ``POLARION_TRACE_*`` was **not** set.
     3. Values already in ``base`` (from the epic module).
 
-    ``METALLB_JIRA_EPIC_KEY`` sets ``epic_label`` and, unless ``POLARION_TRACE_EPIC_URL`` is set,
-    ``epic_url`` as ``{METALLB_JIRA_BROWSE_URL_BASE}/{key}`` (default browse base is Red Hat issues).
+    ``BOND_CNI_JIRA_EPIC_KEY`` sets ``epic_label`` and, unless ``POLARION_TRACE_EPIC_URL`` is set,
+    ``epic_url`` as ``{BOND_CNI_JIRA_BROWSE_URL_BASE}/{key}`` (default browse base is Red Hat issues).
     """
     out = dict(base)
     for env_key, trace_key in _TRACE_ENV:
@@ -42,19 +42,25 @@ def merge_traceability_from_env(
         if v:
             out[trace_key] = v
 
-    epic_key = env.get("METALLB_JIRA_EPIC_KEY", "").strip()
-    browse_base = env.get("METALLB_JIRA_BROWSE_URL_BASE", "https://issues.redhat.com/browse").rstrip("/")
+    epic_key = (
+        env.get("BOND_CNI_JIRA_EPIC_KEY", "").strip()
+        or env.get("METALLB_JIRA_EPIC_KEY", "").strip()
+    )
+    browse_base = (
+        env.get("BOND_CNI_JIRA_BROWSE_URL_BASE", "").strip()
+        or env.get("METALLB_JIRA_BROWSE_URL_BASE", "https://issues.redhat.com/browse")
+    ).rstrip("/")
     if epic_key:
         if not env.get("POLARION_TRACE_EPIC_LABEL", "").strip():
             out["epic_label"] = epic_key
         if not env.get("POLARION_TRACE_EPIC_URL", "").strip():
             out["epic_url"] = f"{browse_base}/{epic_key}"
 
-    hl = env.get("METALLB_HIGH_LEVEL_PLAN_URL", "").strip()
+    hl = env.get("BOND_CNI_HIGH_LEVEL_PLAN_URL", "").strip() or env.get("METALLB_HIGH_LEVEL_PLAN_URL", "").strip()
     if hl and not env.get("POLARION_TRACE_HIGH_LEVEL_PLAN_URL", "").strip():
         out["high_level_plan_url"] = hl
 
-    dl = env.get("METALLB_DETAILED_PLAN_URL", "").strip()
+    dl = env.get("BOND_CNI_DETAILED_PLAN_URL", "").strip() or env.get("METALLB_DETAILED_PLAN_URL", "").strip()
     if dl and not env.get("POLARION_TRACE_DETAILED_PLAN_URL", "").strip():
         out["detailed_plan_url"] = dl
 

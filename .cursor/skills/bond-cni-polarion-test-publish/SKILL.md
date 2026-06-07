@@ -1,15 +1,15 @@
 ---
-name: metallb-polarion-test-publish
-description: Publish MetalLB (or CNF) manual test cases to Polarion with testcase work items and a LiveDoc home page that embeds full descriptions and Step/Expected Result tables—not only work-item macros.
+name: bond-cni-polarion-test-publish
+description: Publish Bond CNI (or CNF) manual test cases to Polarion with testcase work items and a LiveDoc home page that embeds full descriptions and Step/Expected Result tables—not only work-item macros.
 ---
 
-# MetalLB / Polarion testcase + LiveDoc publish
+# Bond CNI / Polarion testcase + LiveDoc publish
 
 ## When to use
 
 The user wants **Polarion test cases** and/or a **LiveDoc module** listing manual tests (often from a detailed test plan tied to a Jira Epic).
 
-**QE lifecycle:** In the standard four-phase flow (`references/metallb-qe-lifecycle-reference.mdc`), Polarion publish happens in **Phase 2** **after** the user **approves** the **detailed** Google Doc—not immediately after generating a draft detailed plan. If the user only asked for a detailed Doc and has not approved it, **do not** publish to Polarion yet.
+**QE lifecycle:** In the standard four-phase flow (`references/bond-cni-qe-lifecycle-reference.mdc`), Polarion publish happens in **Phase 2** **after** the user **approves** the **detailed** Google Doc—not immediately after generating a draft detailed plan. If the user only asked for a detailed Doc and has not approved it, **do not** publish to Polarion yet.
 
 ## Non-negotiable behavior
 
@@ -37,7 +37,7 @@ Each testcase dict must include: `title`, `description_html`, `setup_html`, `tea
 
 ## Polarion quirks
 
-See `references/metallb-polarion-livedoc-workflow.mdc`: `polarion_1` first, no custom heading `id=`, avoid `<h3>` for subsection labels.
+See `references/bond-cni-polarion-livedoc-workflow.mdc`: `polarion_1` first, no custom heading `id=`, avoid `<h3>` for subsection labels.
 
 **Wrapping:** Step / Expected Result cells use a styled `<div>` (`pre-wrap` + `break-word`), not `<pre>`; LiveDoc tables use `table-layout:fixed` and 50% column width. Refresh existing WIs + wiki: `--home-page-only --attach-work-items … --resync-steps-and-home`.
 

@@ -1,17 +1,31 @@
-# Agent Guardrails for Test Plan Generation
+# Agent Guardrails for Bond CNI QE
 
-These rules are mandatory when fulfilling requests like "create a high level test plan" or "create a detailed test plan" for MetalLB EPICs.
+**Role & Expertise:**
+You are a Senior OpenShift Networking Quality Engineering (QE) specialist. Your expertise lies deeply in OpenShift Container Platform networking, specifically focusing on Single Root I/O Virtualization (SR-IOV) hardware networks, Multus CRD Network Attachment Definitions, and the Bond Container Network Interface (Bond-CNI).
+
+**Process & Output:**
+When drafting test plans, you must follow a structured, step-by-step methodology. Your outputs must be highly accurate, actionable, and formatted cleanly in Markdown, suitable for later publishing to Google Docs or Polarion. You must prioritize verifiable, hands-on cluster validation steps.
+
+**Strict Workspace Constraints:**
+
+1. **Transient files:** Save all temporary markdown drafts, generated test plans, and tool virtual environments strictly within `.cursor/workspaces/agent-tmp/`. Never save temporary outputs in the main project tree or system `/tmp` folders. Override directory with `BOND_CNI_AGENT_TMP_DIR` if needed. Publish scripts create temp files there via `scripts/lib/agent_tmp_dir.sh`.
+2. **Jira integration:** When gathering Epic or issue context, you must exclusively use `adapters/jira_adapter.py` with `JIRA_BASE_URL`, `JIRA_EMAIL`, and `JIRA_TOKEN` from `.env` (shell `export JIRA_*` overrides after load). Do **not** use the Atlassian Cursor MCP/plugin for Jira unless the user **explicitly** asks for MCP or `.env` Jira credentials are missing after you report that once. CLI check: `python3 adapters/jira_adapter.py --issue CNF-12345` (or `JiraAdapter.from_env().get_issue(...)` in scripts).
+3. **Repository analysis:** Clone/update product source only under `.cursor/workspaces/bond-cni-repo-analysis/` (see **Repository Analysis Location** below). Do not modify user repositories.
+4. **Publish pipelines:** Use only the validated publish scripts for Google Docs output—never ad-hoc `adapters/google_docs_adapter.py` paths for final test-plan artifacts.
+5. **Secrets:** Never include credentials, tokens, or values from `.env` in chat output, Docs, or commits.
+
+These rules are mandatory when fulfilling requests like "create a high level test plan" or "create a detailed test plan" for Bond CNI EPICs.
 
 ## QE lifecycle (four phases, user gates)
 
-Feature Epics follow **Phase 1 → 2 → 3 → 4** with a **mandatory user validation** before moving to the next phase. Full behavior is in `.cursor/skills/metallb-detailed-test-plan/references/metallb-qe-lifecycle.mdc`.
+Feature Epics follow **Phase 1 → 2 → 3 → 4** with a **mandatory user validation** before moving to the next phase. Full behavior is in `.cursor/skills/bond-cni-detailed-test-plan/references/bond-cni-qe-lifecycle.mdc`.
 
 1. **High-level test plan** — Agent returns draft in **chat** first; user publishes to Google Doc **only when they ask**; then peer QE + developer review; user approves before Phase 2.
-2. **Detailed test plan** — From approved high-level Doc; optional `KUBECONFIG` for hands-on validation of every TC on a test cluster; OCPBUGS + **Networking / Metal LB** for confirmed bugs; user approves Doc; then **Polarion** LiveDoc under **`CNF`** (unless user overrides space).
+2. **Detailed test plan** — From approved high-level Doc; optional `KUBECONFIG` for hands-on validation of every TC on a test cluster; OCPBUGS + **Networking / Bond CNI** for confirmed bugs; user approves Doc; then **Polarion** LiveDoc under **`CNF`** (unless user overrides space).
 3. **First execution** — User supplies Polarion testcase IDs + `KUBECONFIG` (prefer another cluster); agent runs procedures and reports a **results table**; user approves before Phase 4.
-4. **Test automation** — User’s **GitHub fork**: test branch, `e2etest/` changes, push and rely on **user repo GitHub Actions**; **do not open a PR** unless the user explicitly asks.
+4. **Test automation** — User’s **GitHub fork**: test branch, e2e test changes, push and rely on **user repo GitHub Actions**; **do not open a PR** unless the user explicitly asks.
 
-Skills: `metallb-high-level-test-plan`, `metallb-detailed-test-plan`, `metallb-polarion-test-publish`, `metallb-manual-test-execution`, `metallb-e2e-automation`.
+Skills: `bond-cni-high-level-test-plan`, `bond-cni-detailed-test-plan`, `bond-cni-polarion-test-publish`, `bond-cni-manual-test-execution`, `bond-cni-e2e-automation`.
 
 ## User-provided inputs (agents must honor these)
 
@@ -19,19 +33,11 @@ Tasks are driven by data the user supplies (chat message, pasted URLs, or enviro
 
 | Input | Resolution order |
 | ----- | ---------------- |
-| **Jira Epic key** | Explicit value in the user message (e.g. `NET-1234`, `CNF-45678`) → optional `METALLB_JIRA_EPIC_KEY` in `.env` or `export` → if still missing, ask once before Phase 1/2 work. |
-| **Google Doc URLs** | URLs pasted by the user (high-level vs detailed) → `POLARION_TRACE_HIGH_LEVEL_PLAN_URL` / `POLARION_TRACE_DETAILED_PLAN_URL` or `METALLB_HIGH_LEVEL_PLAN_URL` / `METALLB_DETAILED_PLAN_URL` in `.env` / shell → for Polarion traceability, `POLARION_TRACE_*` overrides `METALLB_*` when both are set. |
+| **Jira Epic key** | Explicit value in the user message (e.g. `NET-1234`, `CNF-45678`) → optional `BOND_CNI_JIRA_EPIC_KEY` in `.env` or `export` → if still missing, ask once before Phase 1/2 work. |
+| **Google Doc URLs** | URLs pasted by the user (high-level vs detailed) → `POLARION_TRACE_HIGH_LEVEL_PLAN_URL` / `POLARION_TRACE_DETAILED_PLAN_URL` or `BOND_CNI_HIGH_LEVEL_PLAN_URL` / `BOND_CNI_DETAILED_PLAN_URL` in `.env` / shell → for Polarion traceability, `POLARION_TRACE_*` overrides `BOND_CNI_*` when both are set. |
 | **`KUBECONFIG`** | Path or `export KUBECONFIG=...` from the user → before any `oc`/`kubectl`, export it in the shell session → optional sanity check: `scripts/check_cluster_context.sh` or `scripts/check_cluster_context.sh /path/to/kubeconfig`. |
 
-## Jira access (mandatory)
-
-For Epic context, remote links, and linked issues:
-
-1. **Always use** `adapters/jira_adapter.py` with `JIRA_BASE_URL`, `JIRA_EMAIL`, and `JIRA_TOKEN` from `.env` (shell `export JIRA_*` overrides after load).
-2. **Do not** use the Atlassian Cursor MCP/plugin for Jira unless the user **explicitly** asks for MCP or `.env` Jira credentials are missing after you report that once.
-3. CLI check: `python3 adapters/jira_adapter.py --issue CNF-12345` (or `JiraAdapter.from_env().get_issue(...)` in scripts).
-
-**Shell overrides:** For Polarion publish, `read_qe_env` loads `.env` then overlays `POLARION_*`, `METALLB_*`, `JIRA_*`, and `KUBECONFIG` from the process environment so one-off `export ...` values apply without editing files.
+**Shell overrides:** For Polarion publish, `read_qe_env` loads `.env` then overlays `POLARION_*`, `BOND_CNI_*`, `JIRA_*`, and `KUBECONFIG` from the process environment so one-off `export ...` values apply without editing files.
 
 ## Mandatory Output Path
 
@@ -59,7 +65,7 @@ For Epic context, remote links, and linked issues:
 
 ### Detailed test plan (YAML + oc/kubectl)
 
-1. Follow `.cursor/skills/metallb-detailed-test-plan/SKILL.md` and its `assets/template.md`.
+1. Follow `.cursor/skills/bond-cni-detailed-test-plan/SKILL.md` and its `assets/template.md`.
 2. Generate markdown in memory or under `.cursor/workspaces/agent-tmp/` only (gitignored; do not use `/tmp` or tracked repo paths).
 3. Validate and publish using:
    - `scripts/validate_and_publish_detailed_test_plan.sh "Detailed Test Plan - <JIRA_KEY> - <Feature Name>"`
@@ -69,25 +75,17 @@ For Epic context, remote links, and linked issues:
 ## Repository Analysis Location
 
 - Clone/update analysis repos only under:
-  - `.cursor/workspaces/metallb-repo-analysis/`
-- **Clone URLs** (authoritative; also listed in `.cursor/skills/metallb-high-level-test-plan/SKILL.md` and **detailed** skill step 3):
-  - `https://github.com/metallb/metallb-operator`
-  - `https://github.com/metallb/metallb`
-  - `https://github.com/metallb/frr-k8s`
-- Local directory names after clone:
-  - `metallb-operator`, `metallb`, `frr-k8s`
-- **Detailed plans + cluster validation:** The agent must use these same trees when writing YAML/`oc` steps **and** when **`KUBECONFIG`** is used to run cases on a test cluster—refresh repos before cluster work and use source to debug failed steps (see `metallb-detailed-test-plan` skill and Phase 2 in `.cursor/skills/metallb-detailed-test-plan/references/metallb-qe-lifecycle.mdc`).
-
-## Agent transient files (gitignored)
-
-- Put **all** agent-generated transient artifacts (test-plan markdown for validation, scratch notes, intermediate exports) under **`.cursor/workspaces/agent-tmp/`** only.
-- Do **not** write them to `/tmp`, the repo root, or other tracked paths. Override directory with `METALLB_AGENT_TMP_DIR` if needed.
-- Publish scripts create temp files there via `scripts/lib/agent_tmp_dir.sh`.
+  - `.cursor/workspaces/bond-cni-repo-analysis/`
+- **Clone URLs** (authoritative; also listed in `.cursor/skills/bond-cni-high-level-test-plan/SKILL.md` and **detailed** skill step 3):
+  - `https://github.com/openshift/bond-cni`
+- Local directory name after clone:
+  - `bond-cni`
+- **Detailed plans + cluster validation:** The agent must use this tree when writing YAML/`oc` steps **and** when **`KUBECONFIG`** is used to run cases on a test cluster—refresh the repo before cluster work and use source to debug failed steps (see `bond-cni-detailed-test-plan` skill and Phase 2 in `.cursor/skills/bond-cni-detailed-test-plan/references/bond-cni-qe-lifecycle.mdc`).
 
 ### Detailed test plans (extra)
 
-- Hardcode MetalLB namespace `metallb-system` in YAML and `oc`/`kubectl` commands unless the Epic explicitly names a different namespace (state that exception once under Prerequisites).
-- Do not use ALL_CAPS substitution variables (`METALLB_NS`, `TEST_POOL_NAME`, etc.); use concrete object names and literal CIDRs, and derive per-node names in `bash` when needed (see `.cursor/skills/metallb-detailed-test-plan/SKILL.md`).
+- Use concrete namespace and object names in YAML and `oc`/`kubectl` commands unless the Epic explicitly names different values (state that exception once under Prerequisites).
+- Do not use ALL_CAPS substitution variables (`BOND_CNI_NS`, `TEST_POD_NAME`, etc.); use concrete object names and derive per-node names in `bash` when needed (see `.cursor/skills/bond-cni-detailed-test-plan/SKILL.md`).
 - Keep Google Docs output readable: no “reference only” YAML blocks, no prose crammed inside fenced YAML, and use plain (non-bold) labels for `Manifest (YAML):`, `Run:`, and `Expected:`; keep `**Purpose:**` for validator compatibility.
 - In `## Placeholders`, use **grouped bullet lists** (Namespace / Baseline / test objects), not markdown tables—tables often paste as unusable plain text in Docs.
 
@@ -95,6 +93,6 @@ For Epic context, remote links, and linked issues:
 
 When the user asks for **Polarion** test cases / LiveDoc modules (not only Google Docs):
 
-1. Follow `.cursor/skills/metallb-polarion-test-publish/references/metallb-polarion-livedoc-workflow.mdc` and skill `.cursor/skills/metallb-polarion-test-publish/SKILL.md`.
+1. Follow `.cursor/skills/bond-cni-polarion-test-publish/references/bond-cni-polarion-livedoc-workflow.mdc` and skill `.cursor/skills/bond-cni-polarion-test-publish/SKILL.md`.
 2. **Mandatory:** after creating testcase work items and moving them into the module, call **`PolarionAdapter.publish_livedoc_home_page`** (or `build_livedoc_home_html` + `update_document_home_page`) so the **module home page HTML** includes full **Description**, **Setup**, **Step | Expected Result** tables, **Teardown**, and a **link to each testcase** under its title. **`build_livedoc_home_html` raises `ValueError`** if the output would include a "Linked Polarion test cases" section or `module-workitem` macros; do not ship a document that is only macro placeholders. If you PATCH custom HTML with `update_document_home_page`, run **`validate_livedoc_home_html_policy`** first unless you have an explicit, documented exception.
 3. Reuse `adapters/polarion_livedoc.py`, `adapters/polarion_adapter.py`, and `adapters/polarion_test_publish.py`; publish via `scripts/publish_polarion_livedoc_tests.py --epic-module <import.path.to.epic>` (see `examples/polarion_livedoc_epic_module/sample_epic.py` as the template; customer-specific epic modules should live outside the shared tree or in a gitignored path).
