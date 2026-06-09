@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import errno
-import json
 import re
 from pathlib import Path
 
@@ -18,6 +17,13 @@ SCOPES = [
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/drive",
 ]
+
+BATCH_CHUNK_SIZE = 400
+CODE_FONT = "Courier New"
+CODE_BG = {"color": {"rgbColor": {"red": 0.94, "green": 0.94, "blue": 0.94}}}
+LABEL_LINES = frozenset({"Run:", "Expected:", "Manifest (YAML):", "Sample output:"})
+URL_RX = re.compile(r"https?://[^\s)]+")
+FENCE_OPEN_RX = re.compile(r"^```(\w*)?\s*$")
 
 
 def read_env_values(env_file: Path) -> dict[str, str]:
@@ -50,7 +56,6 @@ def load_credentials(auth_file: Path, token_file: Path, redirect_port: int) -> U
         return creds
 
     flow = InstalledAppFlow.from_client_secrets_file(str(auth_file), SCOPES)
-    # open_browser=False keeps behavior stable in agent sessions.
     try:
         creds = flow.run_local_server(
             port=redirect_port,
@@ -69,56 +74,85 @@ def load_credentials(auth_file: Path, token_file: Path, redirect_port: int) -> U
     return creds
 
 
+def _strip_bold_markers(content: str) -> tuple[str, list[tuple[int, int]]]:
+    """Return plain text and bold ranges relative to the returned string."""
+    out = ""
+    bold_ranges: list[tuple[int, int]] = []
+    i = 0
+    while i < len(content):
+        if content.startswith("**", i):
+            j = content.find("**", i + 2)
+            if j != -1:
+                segment = content[i + 2 : j]
+                start = len(out)
+                out += segment
+                end = len(out)
+                if start != end:
+                    bold_ranges.append((start, end))
+                i = j + 2
+                continue
+        out += content[i]
+        i += 1
+    return out, bold_ranges
+
+
+def _heading_style(line: str) -> tuple[str | None, str]:
+    """Longest-prefix heading match; returns (namedStyleType, content)."""
+    for prefix, style in (
+        ("#### ", "HEADING_4"),
+        ("### ", "HEADING_3"),
+        ("## ", "HEADING_2"),
+        ("# ", "TITLE"),
+    ):
+        if line.startswith(prefix):
+            return style, line[len(prefix) :].strip()
+    return None, line
+
+
 def build_doc_requests(markdown_lines: list[str]) -> tuple[str, list[dict]]:
     text = ""
     paragraph_styles: list[tuple[int, int, str]] = []
     bullet_lines: list[tuple[int, int, bool]] = []
     bold_ranges: list[tuple[int, int]] = []
+    code_ranges: list[tuple[int, int]] = []
+    label_ranges: list[tuple[int, int]] = []
     link_ranges: list[tuple[int, int, str]] = []
 
     idx = 1
-    url_rx = re.compile(r"https?://[^\s)]+")
+    in_fence = False
 
     for raw_line in markdown_lines:
         line = raw_line.rstrip("\n")
+
+        if FENCE_OPEN_RX.match(line.strip()):
+            in_fence = not in_fence
+            continue
+
+        if in_fence:
+            start = idx
+            text += line + "\n"
+            end = idx + len(line)
+            if line:
+                code_ranges.append((start, end))
+            idx += len(line) + 1
+            continue
+
         named_style = None
         ordered = None
+        content = line
 
-        if line.startswith("# "):
-            named_style = "TITLE"
-            content = line[2:].strip()
-        elif line.startswith("## "):
-            named_style = "HEADING_2"
-            content = line[3:].strip()
-        elif line.startswith("### "):
-            named_style = "HEADING_3"
-            content = line[4:].strip()
+        style_name, stripped = _heading_style(line)
+        if style_name:
+            named_style = style_name
+            content = stripped
         elif re.match(r"^\s*\d+\.\s+", line):
             ordered = True
             content = re.sub(r"^\s*\d+\.\s+", "", line)
         elif re.match(r"^\s*-\s+", line):
             ordered = False
             content = re.sub(r"^\s*-\s+", "", line)
-        else:
-            content = line
 
-        out = ""
-        i = 0
-        local_bold: list[tuple[int, int]] = []
-        while i < len(content):
-            if content.startswith("**", i):
-                j = content.find("**", i + 2)
-                if j != -1:
-                    segment = content[i + 2 : j]
-                    seg_start = len(out)
-                    out += segment
-                    seg_end = len(out)
-                    local_bold.append((seg_start, seg_end))
-                    i = j + 2
-                    continue
-            out += content[i]
-            i += 1
-
+        out, local_bold = _strip_bold_markers(content)
         start = idx
         text += out + "\n"
         end = idx + len(out)
@@ -127,15 +161,18 @@ def build_doc_requests(markdown_lines: list[str]) -> tuple[str, list[dict]]:
             paragraph_styles.append((start, end, named_style))
         if ordered is not None and out:
             bullet_lines.append((start, end, ordered))
+        if out in LABEL_LINES:
+            label_ranges.append((start, end))
         for s, e in local_bold:
             if s != e:
                 bold_ranges.append((start + s, start + e))
-        for m in url_rx.finditer(out):
+        for m in URL_RX.finditer(out):
             link_ranges.append((start + m.start(), start + m.end(), m.group(0)))
 
         idx += len(out) + 1
 
     requests: list[dict] = [{"insertText": {"location": {"index": 1}, "text": text}}]
+
     for s, e, style in paragraph_styles:
         requests.append(
             {
@@ -146,6 +183,7 @@ def build_doc_requests(markdown_lines: list[str]) -> tuple[str, list[dict]]:
                 }
             }
         )
+
     for s, e, ordered in bullet_lines:
         requests.append(
             {
@@ -157,7 +195,23 @@ def build_doc_requests(markdown_lines: list[str]) -> tuple[str, list[dict]]:
                 }
             }
         )
-    for s, e in bold_ranges:
+
+    mono_style = {
+        "weightedFontFamily": {"fontFamily": CODE_FONT},
+        "backgroundColor": CODE_BG,
+    }
+    for s, e in code_ranges:
+        requests.append(
+            {
+                "updateTextStyle": {
+                    "range": {"startIndex": s, "endIndex": e},
+                    "textStyle": mono_style,
+                    "fields": "weightedFontFamily,backgroundColor",
+                }
+            }
+        )
+
+    for s, e in bold_ranges + label_ranges:
         requests.append(
             {
                 "updateTextStyle": {
@@ -167,6 +221,7 @@ def build_doc_requests(markdown_lines: list[str]) -> tuple[str, list[dict]]:
                 }
             }
         )
+
     for s, e, url in link_ranges:
         requests.append(
             {
@@ -177,7 +232,19 @@ def build_doc_requests(markdown_lines: list[str]) -> tuple[str, list[dict]]:
                 }
             }
         )
+
     return text, requests
+
+
+def batch_update_document(docs, doc_id: str, requests: list[dict]) -> None:
+    if not requests:
+        return
+    insert_req, style_reqs = requests[0], requests[1:]
+    docs.documents().batchUpdate(documentId=doc_id, body={"requests": [insert_req]}).execute()
+    for offset in range(0, len(style_reqs), BATCH_CHUNK_SIZE):
+        chunk = style_reqs[offset : offset + BATCH_CHUNK_SIZE]
+        if chunk:
+            docs.documents().batchUpdate(documentId=doc_id, body={"requests": chunk}).execute()
 
 
 def main() -> int:
@@ -245,7 +312,7 @@ def main() -> int:
     ).execute()
     doc_id = file_result["id"]
 
-    docs.documents().batchUpdate(documentId=doc_id, body={"requests": requests}).execute()
+    batch_update_document(docs, doc_id, requests)
     print(f"https://docs.google.com/document/d/{doc_id}/edit")
     return 0
 

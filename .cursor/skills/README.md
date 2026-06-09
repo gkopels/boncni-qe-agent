@@ -7,4 +7,10 @@ This workspace uses a progressive skill structure inspired by agentskills.io:
 - `scripts/`: script entrypoints or command references used by the skill
 - `references/`: policy/rule documents and lifecycle references used by the skill
 
-Each Bond CNI QE skill is self-contained with these directories so operational rules and execution helpers live alongside the skill that uses them.
+Each **MetalLB** or **Bond CNI** QE skill is self-contained with these directories so operational rules and execution helpers live alongside the skill that uses them.
+
+## Cross-skill conventions (all agents)
+
+- **Detailed test plan steps** (`metallb-detailed-test-plan` / `bond-cni-detailed-test-plan`): each `Expected:` block uses **`Run:`** + **`Sample output:`** with representative `oc`/`kubectl` terminal output — see each skill's `assets/template.md`.
+- **Polarion publish** (`metallb-polarion-test-publish` / `bond-cni-polarion-test-publish`): epic `steps` expected cells use **`expected_sample_output()`** with the same Run + Sample output shape; see `examples/polarion_livedoc_epic_module/sample_epic.py`.
+- **Polarion delete** (`metallb-polarion-deletion-guardrails.mdc` / `bond-cni-polarion-deletion-guardrails.mdc`): **two** user confirmations in chat; plan lists broken links; scripts delete only with dual `--confirm-token` / `--confirm-final`.

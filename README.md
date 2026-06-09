@@ -1,8 +1,15 @@
-# bondcni-qe-agent
+# boncni-qe-agent
 
-Cursor-oriented workflows for Bond CNI / OpenShift networking QE: high-level test plans drafted in chat (Google Docs publish on request), detailed test plans (Google Docs), Polarion LiveDoc publishing, and a four-phase lifecycle with explicit approval gates.
+Cursor-oriented workflows for **MetalLB** and **Bond CNI** OpenShift networking QE: high-level test plans drafted in chat (Google Docs publish on request), detailed test plans (Google Docs), Polarion LiveDoc publishing, and a four-phase lifecycle with explicit approval gates.
 
-See [AGENTS.md](AGENTS.md) for guardrails and [`.cursor/skills/bond-cni-detailed-test-plan/references/bond-cni-qe-lifecycle.mdc`](.cursor/skills/bond-cni-detailed-test-plan/references/bond-cni-qe-lifecycle.mdc) for phase definitions.
+Pick the skill set that matches your Epic:
+
+| Area | Skills (invoke in chat as `/skill-name`) | QE lifecycle reference |
+| ---- | ---------------------------------------- | ---------------------- |
+| **MetalLB** | `metallb-high-level-test-plan`, `metallb-detailed-test-plan`, `metallb-polarion-test-publish`, `metallb-manual-test-execution`, `metallb-e2e-automation` | [metallb-qe-lifecycle.mdc](.cursor/skills/metallb-detailed-test-plan/references/metallb-qe-lifecycle.mdc) |
+| **Bond CNI** | `bond-cni-high-level-test-plan`, `bond-cni-detailed-test-plan`, `bond-cni-polarion-test-publish`, `bond-cni-manual-test-execution`, `bond-cni-e2e-automation` | [bond-cni-qe-lifecycle.mdc](.cursor/skills/bond-cni-detailed-test-plan/references/bond-cni-qe-lifecycle.mdc) |
+
+See [AGENTS.md](AGENTS.md) for agent guardrails. Skill layout and conventions are in [`.cursor/skills/README.md`](.cursor/skills/README.md).
 
 Local-only directories (repo analysis clones, tooling venvs, **agent temp output** at `.cursor/workspaces/agent-tmp/`) live under `.cursor/workspaces/` and are not committed. Agents must put transient markdown and similar artifacts only in that gitignored tree—not in `/tmp` or tracked paths. Copy `.env.example` to `.env` and fill in real values (`.env` stays gitignored).
 

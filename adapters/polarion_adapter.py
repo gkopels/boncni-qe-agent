@@ -4,7 +4,8 @@
 Also provides helpers to create test-case work items with Setup / Teardown / Test Steps
 (two-column Polarion steps: step + expectedResult), attach them to a LiveDoc module, and
 **PATCH the module home page** with readable HTML (see `polarion_livedoc.build_livedoc_home_html`
-and `.cursor/skills/bond-cni-polarion-test-publish/references/bond-cni-polarion-livedoc-workflow.mdc`).
+and `.cursor/skills/metallb-polarion-test-publish/references/metallb-polarion-livedoc-workflow.mdc` or
+`.cursor/skills/bond-cni-polarion-test-publish/references/bond-cni-polarion-livedoc-workflow.mdc`).
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from __future__ import annotations
 import argparse
 import html
 import os
+import re
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -31,7 +33,7 @@ def read_env_values(env_file: Path) -> dict[str, str]:
 
 
 # Process environment overrides for one-off runs (export VAR=... wins over .env for these keys).
-_QE_SHELL_OVERRIDE_PREFIXES = ("POLARION_", "BOND_CNI_", "METALLB_", "JIRA_")
+_QE_SHELL_OVERRIDE_PREFIXES = ("POLARION_", "METALLB_", "BOND_CNI_", "JIRA_")
 _QE_SHELL_OVERRIDE_EXACT: frozenset[str] = frozenset({"KUBECONFIG"})
 
 
@@ -39,7 +41,7 @@ def read_qe_env(env_file: Path) -> dict[str, str]:
     """
     Load ``.env`` then overlay matching variables from ``os.environ``.
 
-    Use this for publish scripts so operators can pass ``BOND_CNI_JIRA_EPIC_KEY``,
+    Use this for publish scripts so operators can pass ``METALLB_JIRA_EPIC_KEY`` or ``BOND_CNI_JIRA_EPIC_KEY``,
     ``POLARION_TRACE_*``, or ``KUBECONFIG`` from the shell without editing ``.env``.
     """
     values = read_env_values(env_file)
@@ -52,6 +54,74 @@ def read_qe_env(env_file: Path) -> dict[str, str]:
     return values
 
 
+def build_livedoc_portal_url(
+    base_url: str,
+    project_id: str,
+    space_id: str,
+    module_name: str,
+) -> str:
+    """
+    Browser URL for a Polarion LiveDoc module home page.
+
+    Red Hat Polarion SPA routing uses ``#/project/{projectId}/wiki/{spaceId}/{moduleName}``.
+    Do **not** use ``#/project/.../space/.../module/...`` — that path redirects to the portal home.
+    """
+    base = base_url.rstrip("/")
+    return f"{base}/polarion/#/project/{project_id}/wiki/{space_id}/{module_name}"
+
+
+def livedoc_module_location(space_id: str, module_name: str) -> str:
+    """Polarion module location for SOAP ``getModuleByLocation`` (``{space}/{moduleName}``)."""
+    return f"{space_id}/{module_name}"
+
+
+def _soap_login_session_id(*, base_url: str, token: str, http_client: Any) -> str:
+    session_url = f"{base_url.rstrip('/')}/polarion/ws/services/SessionWebService"
+    body = f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ses="http://ws.polarion.com/SessionWebService">
+  <soapenv:Body><ses:logInWithToken><ses:mechanism>AccessToken</ses:mechanism><ses:username></ses:username><ses:token>{html.escape(token)}</ses:token></ses:logInWithToken></soapenv:Body>
+</soapenv:Envelope>"""
+    resp = http_client.post(
+        session_url,
+        content=body.encode(),
+        headers={"Content-Type": "text/xml; charset=utf-8", "SOAPAction": "logInWithToken"},
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Polarion SOAP login failed (HTTP {resp.status_code})")
+    match = re.search(r"<ns1:sessionID[^>]*>([^<]+)</ns1:sessionID>", resp.text)
+    if not match:
+        raise RuntimeError("Polarion SOAP login response missing sessionID")
+    return match.group(1)
+
+
+def _soap_tracker_call(*, base_url: str, session_id: str, body: str, action: str, http_client: Any) -> str:
+    tracker_url = f"{base_url.rstrip('/')}/polarion/ws/services/TrackerWebService"
+    resp = http_client.post(
+        tracker_url,
+        content=body.encode(),
+        headers={"Content-Type": "text/xml; charset=utf-8", "SOAPAction": action},
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Polarion SOAP {action} failed (HTTP {resp.status_code})")
+    return resp.text
+
+
+def build_livedoc_portal_url_from_target(
+    base_url: str,
+    target_document: str,
+) -> str:
+    """
+    Build a LiveDoc portal URL from REST ``target_document`` ``{projectId}/{spaceId}/{moduleName}``.
+    """
+    parts = target_document.split("/", 2)
+    if len(parts) != 3:
+        raise ValueError(
+            f"target_document must be project/space/module, got {target_document!r}"
+        )
+    project_id, space_id, module_name = parts
+    return build_livedoc_portal_url(base_url, project_id, space_id, module_name)
+
+
 def polarion_html_field(inner_html: str) -> dict[str, Any]:
     """Polarion rich-text field payload (HTML)."""
     return {"type": "text/html", "value": inner_html}
@@ -59,6 +129,53 @@ def polarion_html_field(inner_html: str) -> dict[str, Any]:
 
 def html_paragraph(text: str) -> str:
     return f"<p>{html.escape(text)}</p>"
+
+
+def module_workitem_macro_div(work_item_id: str) -> str:
+    """
+    Polarion LiveDoc wiki macro that **marks** a testcase work item in the document.
+
+    Without one macro per testcase, PATCHing custom home-page HTML can leave work items
+    "unmarked" (portal links alone are not enough). Use exactly one per test — no headings.
+    """
+    wid = html.escape(work_item_id, quote=True)
+    return (
+        f'<div id="polarion_wiki macro name=module-workitem;params=id={wid}"></div>'
+    )
+
+
+def html_section_label(
+    text: str,
+    *,
+    margin_top: str = "1em",
+    margin_bottom: str = "0.4em",
+    font_size: str | None = None,
+    text_decoration: str | None = None,
+    bold: bool = True,
+) -> str:
+    """
+    Bold section label as a ``<p>`` — not ``<h1>``–``<h6>``.
+
+    Polarion turns HTML headings into LiveDoc outline Heading parts (extra IDs/nodes).
+    Use this for document titles, testcase titles, and subsections on the home page and
+    in testcase Description fields.
+
+    Typography (``font-size``, underline) must live on an inner ``<span>`` — Polarion's
+    wiki renderer ignores ``font-size`` on ``<p>`` (see CNF MetalLB reference LiveDocs).
+    """
+    p_style = f"margin-top:{margin_top};margin-bottom:{margin_bottom};"
+    span_parts = ["line-height:1.5"]
+    if bold:
+        span_parts.append("font-weight:bold")
+    if font_size:
+        span_parts.append(f"font-size:{font_size}")
+    if text_decoration:
+        span_parts.append(f"text-decoration:{text_decoration}")
+    span_style = ";".join(span_parts) + ";"
+    return (
+        f'<p style="{p_style}">'
+        f'<span style="{span_style}">{html.escape(text)}</span></p>'
+    )
 
 
 def html_block(text: str) -> str:
@@ -168,13 +285,28 @@ class PolarionAdapter:
             home_page_content_type="text/html",
         )
 
+    def update_testcase_description(
+        self,
+        work_item_id: str,
+        description_html: str,
+    ) -> None:
+        """PATCH testcase Description (HTML)."""
+        from polarion_rest_client.workitem import WorkItem
+
+        WorkItem(self.client).update(
+            self.project_id,
+            work_item_id,
+            description=description_html,
+            description_type="text/html",
+        )
+
     def publish_livedoc_home_page(
         self,
         space_id: str,
         document_name: str,
         *,
         document_h1_title: str,
-        traceability_html: str,
+        trace: dict[str, str],
         tests: list[dict[str, Any]],
         work_item_ids: Sequence[str],
     ) -> dict:
@@ -182,20 +314,100 @@ class PolarionAdapter:
         Build standard testcase-collection HTML (via `polarion_livedoc`) and PATCH the LiveDoc home page.
         Mandatory whenever testcase work items are attached to a module — see project rules.
 
-        The HTML builder rejects a trailing "Linked Polarion test cases" section and
-        ``module-workitem`` macros (`validate_livedoc_home_html_policy`).
+        The HTML builder requires one ``module-workitem`` macro per testcase (marks WIs in
+        the document) and rejects heading tags / a "Linked Polarion test cases" footer.
         """
         from .polarion_livedoc import build_livedoc_home_html
 
         body = build_livedoc_home_html(
             document_h1_title=document_h1_title,
-            traceability_html=traceability_html,
+            trace=trace,
             tests=tests,
             project_id=self.project_id,
             base_url=self.base_url,
             work_item_ids=work_item_ids,
         )
         return self.update_document_home_page(space_id, document_name, html_body=body)
+
+    def livedoc_portal_url(self, space_id: str, module_name: str) -> str:
+        """Browser URL for this project's LiveDoc module (wiki home page)."""
+        return build_livedoc_portal_url(
+            self.base_url, self.project_id, space_id, module_name
+        )
+
+    def delete_livedoc_module(
+        self,
+        space_id: str,
+        module_name: str,
+        *,
+        project_id: str | None = None,
+        confirmed: bool = False,
+    ) -> None:
+        """
+        Delete a LiveDoc module (document).
+
+        Polarion REST returns HTTP 405 for document DELETE. Deletion uses SOAP
+        ``TrackerWebService.getModuleByLocation`` + ``deleteModule`` with the same
+        ``POLARION_TOKEN`` as REST (``SessionWebService.logInWithToken``).
+
+        Pass ``confirmed=True`` only after the user has approved deletion **twice** in chat
+        (see ``adapters.polarion_deletion`` and ``metallb-polarion-deletion-guardrails``).
+        """
+        if not confirmed:
+            raise ValueError(
+                "Refusing to delete LiveDoc without confirmed=True. Build a deletion plan "
+                "(build_livedoc_deletion_plan), show invalid links to the user, obtain double "
+                "explicit confirmation in chat, then call delete scripts with matching "
+                "--confirm-token and --confirm-final."
+            )
+        proj = project_id or self.project_id
+        http_client = self.client.gen.get_httpx_client()
+        session_id = _soap_login_session_id(
+            base_url=self.base_url, token=self.token, http_client=http_client
+        )
+        location = livedoc_module_location(space_id, module_name)
+        get_body = f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tra="http://ws.polarion.com/TrackerWebService">
+  <soapenv:Header><ns1:sessionID xmlns:ns1="http://ws.polarion.com/session">{session_id}</ns1:sessionID></soapenv:Header>
+  <soapenv:Body><tra:getModuleByLocation><tra:projectId>{html.escape(proj)}</tra:projectId><tra:location>{html.escape(location)}</tra:location></tra:getModuleByLocation></soapenv:Body>
+</soapenv:Envelope>"""
+        get_xml = _soap_tracker_call(
+            base_url=self.base_url,
+            session_id=session_id,
+            body=get_body,
+            action="getModuleByLocation",
+            http_client=http_client,
+        )
+        if "Fault" in get_xml:
+            fault = re.search(r"<faultstring>([^<]+)</faultstring>", get_xml)
+            raise RuntimeError(
+                f"Polarion getModuleByLocation failed for {proj}/{location}: "
+                f"{fault.group(1) if fault else get_xml[:300]}"
+            )
+        uri_match = re.search(r'uri="([^"]+)"', get_xml)
+        if not uri_match:
+            raise RuntimeError(
+                f"Polarion getModuleByLocation returned no module URI for {proj}/{location}"
+            )
+        module_uri = uri_match.group(1)
+        delete_body = f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tra="http://ws.polarion.com/TrackerWebService">
+  <soapenv:Header><ns1:sessionID xmlns:ns1="http://ws.polarion.com/session">{session_id}</ns1:sessionID></soapenv:Header>
+  <soapenv:Body><tra:deleteModule><tra:moduleURI>{html.escape(module_uri)}</tra:moduleURI></tra:deleteModule></soapenv:Body>
+</soapenv:Envelope>"""
+        delete_xml = _soap_tracker_call(
+            base_url=self.base_url,
+            session_id=session_id,
+            body=delete_body,
+            action="deleteModule",
+            http_client=http_client,
+        )
+        if "deleteModuleResponse" not in delete_xml:
+            fault = re.search(r"<faultstring>([^<]+)</faultstring>", delete_xml)
+            raise RuntimeError(
+                f"Polarion deleteModule failed for {module_uri}: "
+                f"{fault.group(1) if fault else delete_xml[:300]}"
+            )
 
     def create_module_document(
         self,
@@ -226,10 +438,18 @@ class PolarionAdapter:
         description_html: str,
         setup_html: str,
         teardown_html: str,
+        metadata: dict[str, Any] | None = None,
         status: str = "draft",
     ) -> str:
         """
-        Create a testcase work item and set Description, Setup, Teardown (HTML).
+        Create a testcase work item and set Description, Setup, Teardown (HTML),
+        and Polarion classification metadata.
+
+        ``metadata`` must use Polarion REST attribute ids (see
+        ``polarion_test_publish.build_testcase_metadata``): UI fields Level,
+        Component, Importance, Pos/Neg, and Automation map to ``caselevel``,
+        ``casecomponent``, ``caseimportance``, ``caseposneg``, and
+        ``caseautomation`` — not ``level`` / ``component`` / ``importance``.
         Returns the short work item id (e.g. OCP-12345).
         """
         from polarion_rest_client.workitem import WorkItem
@@ -245,17 +465,35 @@ class PolarionAdapter:
         if not wid:
             raise RuntimeError(f"Unexpected create response: {created!r}")
 
+        attrs: dict[str, Any] = {
+            "setup": polarion_html_field(setup_html),
+            "teardown": polarion_html_field(teardown_html),
+        }
+        if metadata:
+            attrs.update(metadata)
+
         wi.update(
             self.project_id,
             wid,
             description=description_html,
             description_type="text/html",
-            attributes={
-                "setup": polarion_html_field(setup_html),
-                "teardown": polarion_html_field(teardown_html),
-            },
+            attributes=attrs,
         )
         return wid
+
+    def update_testcase_metadata(
+        self,
+        work_item_id: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        """PATCH testcase classification fields (``caselevel``, ``casecomponent``, etc.)."""
+        from polarion_rest_client.workitem import WorkItem
+
+        WorkItem(self.client).update(
+            self.project_id,
+            work_item_id,
+            attributes=metadata,
+        )
 
     def add_test_steps(
         self,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate structure of a detailed MetalLB test plan markdown file."""
+"""Validate structure of a detailed MetalLB or Bond CNI test plan markdown file."""
 
 from __future__ import annotations
 

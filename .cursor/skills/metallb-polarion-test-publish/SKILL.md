@@ -1,15 +1,15 @@
 ---
-name: bond-cni-polarion-test-publish
-description: Publish Bond CNI (or CNF) manual test cases to Polarion with testcase work items and a LiveDoc home page that embeds full descriptions and Step/Expected Result tables—not only work-item macros.
+name: metallb-polarion-test-publish
+description: Publish MetalLB (or CNF) manual test cases to Polarion with testcase work items and a LiveDoc home page that embeds full descriptions and Step/Expected Result tables—not only work-item macros.
 ---
 
-# Bond CNI / Polarion testcase + LiveDoc publish
+# MetalLB / Polarion testcase + LiveDoc publish
 
 ## When to use
 
 The user wants **Polarion test cases** and/or a **LiveDoc module** listing manual tests (often from a detailed test plan tied to a Jira Epic).
 
-**QE lifecycle:** In the standard four-phase flow (`references/bond-cni-qe-lifecycle-reference.mdc`), Polarion publish happens in **Phase 2** **after** the user **approves** the **detailed** Google Doc—not immediately after generating a draft detailed plan. If the user only asked for a detailed Doc and has not approved it, **do not** publish to Polarion yet.
+**QE lifecycle:** In the standard four-phase flow (`references/metallb-qe-lifecycle-reference.mdc`), Polarion publish happens in **Phase 2** **after** the user **approves** the **detailed** Google Doc—not immediately after generating a draft detailed plan. If the user only asked for a detailed Doc and has not approved it, **do not** publish to Polarion yet.
 
 ## Non-negotiable behavior
 
@@ -20,9 +20,9 @@ After attaching testcase work items to a LiveDoc module, **always PATCH `homePag
 - Per testcase: title, link to WI, **Description**, **Setup**, **Test steps** as a **two-column table** (Step | Expected Result), **Teardown**
 - Per testcase: **one `module-workitem` macro** (marks the WI in the document — without it Polarion shows "unmarked in the Document") plus readable inline HTML and a portal link. **No** trailing "Linked Polarion test cases" footer. **`validate_livedoc_home_html_policy`** requires exactly one macro per `work_item_id`, forbids **`<h1>`–`<h6>`**, and forbids the linked-section footer.
 
-Do **not** leave the home page as only macro placeholders (the body must be readable HTML). Learn from **CNF Bond CNI**: macros keep the outline flat, but we keep **inline readable HTML** instead—using **bold `<p>` labels only** so Polarion does not create extra Heading outline nodes. **One testcase work item ID per test**; no heading-derived IDs for Traceability, Purpose, Contents, etc.
+Do **not** leave the home page as only macro placeholders (the body must be readable HTML). Learn from **CNF MetalLB**: macros keep the outline flat, but we keep **inline readable HTML** instead—using **bold `<p>` labels only** so Polarion does not create extra Heading outline nodes. **One testcase work item ID per test**; no heading-derived IDs for Traceability, Purpose, Contents, etc.
 
-**Test steps — Expected Result (non-negotiable):** For every epic `steps` tuple `(step_text, expected_text)`, set `expected_text` with **`expected_sample_output(verify_command, sample_text)`** from `adapters/polarion_test_publish.py`. The expected cell must contain a **`Run: oc …`** verification command and a **`Sample output:`** block with representative terminal output (tables, jsonpath lines, log snippets). Do **not** use prose-only expectations ("resource should be created", "status is Valid"). When building the epic module from an approved detailed Google Doc, copy the same **Run + Sample output** shape from each step’s **Expected** block (`bond-cni-detailed-test-plan` skill / `assets/template.md`).
+**Test steps — Expected Result (non-negotiable):** For every epic `steps` tuple `(step_text, expected_text)`, set `expected_text` with **`expected_sample_output(verify_command, sample_text)`** from `adapters/polarion_test_publish.py`. The expected cell must contain a **`Run: oc …`** verification command and a **`Sample output:`** block with representative terminal output (tables, jsonpath lines, log snippets). Do **not** use prose-only expectations ("resource should be created", "status is Valid"). When building the epic module from an approved detailed Google Doc, copy the same **Run + Sample output** shape from each step’s **Expected** block (`metallb-detailed-test-plan` skill / `assets/template.md`).
 
 ## Testcase work-item metadata (mandatory on create)
 
@@ -77,13 +77,13 @@ Each testcase dict must include: `title`, **`purpose`**, **`pass_fail`**, `setup
 
 ## Polarion quirks
 
-See `references/bond-cni-polarion-livedoc-workflow.mdc`: `polarion_1` first, **no `<h1>`–`<h6>` anywhere**, use `html_section_label` for all titles/subsections (Description field included).
+See `references/metallb-polarion-livedoc-workflow.mdc`: `polarion_1` first, **no `<h1>`–`<h6>` anywhere**, use `html_section_label` for all titles/subsections (Description field included).
 
 **Wrapping:** Step / Expected Result cells use a styled `<div>` (`pre-wrap` + `break-word`), not `<pre>`; LiveDoc tables use `table-layout:fixed` and 50% column width. Refresh existing WIs + wiki: `--home-page-only --attach-work-items … --resync-steps-and-home`.
 
 ## Space / location
 
-For CNF epics, prefer LiveDoc space **`CNF`** (alongside **CNF Bond CNI**). Override with `POLARION_SPACE_ID` or `--space-id`.
+For CNF epics, prefer LiveDoc space **`CNF`** (alongside **CNF MetalLB**). Override with `POLARION_SPACE_ID` or `--space-id`.
 
 ## LiveDoc browser URL
 
@@ -95,7 +95,7 @@ Do **not** link `#/project/.../space/.../module/...` — that SPA path redirects
 
 ## Delete a LiveDoc or work items (mandatory guardrails)
 
-Read **`references/bond-cni-polarion-deletion-guardrails.mdc`** before any delete.
+Read **`references/metallb-polarion-deletion-guardrails.mdc`** before any delete.
 
 **Never** delete without **two separate** user confirmations in chat:
 
@@ -124,7 +124,7 @@ If work items already exist:
 For a real Epic, point `--epic-module` at your own package (or set `POLARION_EPIC_MODULE`) and supply traceability from **user-provided data**:
 
 - **Preferred:** `POLARION_TRACE_EPIC_URL`, `POLARION_TRACE_EPIC_LABEL`, `POLARION_TRACE_HIGH_LEVEL_PLAN_URL`, `POLARION_TRACE_DETAILED_PLAN_URL` in `.env` or **shell `export`** (shell wins over `.env` for these keys).
-- **Convenience:** if the user only gives an Epic key and Doc URLs, set `BOND_CNI_JIRA_EPIC_KEY` and optionally `BOND_CNI_HIGH_LEVEL_PLAN_URL` / `BOND_CNI_DETAILED_PLAN_URL` when the corresponding `POLARION_TRACE_*` variables are **not** set. CLI flags `--epic-url`, `--epic-label`, etc. still override after env merge.
+- **Convenience:** if the user only gives an Epic key and Doc URLs, set `METALLB_JIRA_EPIC_KEY` and optionally `METALLB_HIGH_LEVEL_PLAN_URL` / `METALLB_DETAILED_PLAN_URL` when the corresponding `POLARION_TRACE_*` variables are **not** set. CLI flags `--epic-url`, `--epic-label`, etc. still override after env merge.
 - **Epic module:** testcase bodies remain in Python (`test_definitions`); traceability strings can be fully driven by env as above.
 
 Alternatively call `publish_livedoc_home_page` with the same testcase dict shape.
