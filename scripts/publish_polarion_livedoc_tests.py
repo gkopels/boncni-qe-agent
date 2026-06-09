@@ -9,7 +9,7 @@ Prerequisites:
   Optional: POLARION_SPACE_ID
   Optional traceability: POLARION_TRACE_* (highest), or METALLB_JIRA_EPIC_KEY + optional
     METALLB_HIGH_LEVEL_PLAN_URL / METALLB_DETAILED_PLAN_URL when POLARION_TRACE_* unset.
-    Shell exports for POLARION_*, METALLB_*, JIRA_* override .env (see read_qe_env).
+    Shell exports for POLARION_*, METALLB_*, BOND_CNI_*, OPENPE_*, JIRA_* override .env (see read_qe_env).
 
 Usage:
   PYTHONPATH=examples python3 scripts/publish_polarion_livedoc_tests.py \\
@@ -51,6 +51,8 @@ from adapters.polarion_test_publish import (  # noqa: E402
     discover_work_item_ids_by_title_marker,
     merge_traceability_from_env,
     resolve_testcase_metadata,
+    resolve_workitem_description_html,
+    resolve_workitem_setup_html,
     TESTCASE_WORKITEM_DESCRIPTION_HTML,
     validate_testcase_dict,
 )
@@ -214,6 +216,7 @@ def main(argv: list[str] | None = None) -> int:
     livedoc_h1 = args.livedoc_h1_title or _get(
         mod, "DEFAULT_LIVEDOC_H1_TITLE", title_doc
     )
+    livedoc_summary = _get(mod, "DEFAULT_LIVEDOC_SUMMARY_HTML", "")
 
     target_document = f"{doc_project}/{space}/{module_name}"
     livedoc_url = build_livedoc_portal_url(base, doc_project, space, module_name)
@@ -294,7 +297,18 @@ def main(argv: list[str] | None = None) -> int:
                 adapter.replace_test_steps(wid, tc["steps"])
                 adapter.update_testcase_metadata(wid, meta)
                 adapter.update_testcase_description(
-                    wid, tc.get("description_html", TESTCASE_WORKITEM_DESCRIPTION_HTML)
+                    wid,
+                    resolve_workitem_description_html(
+                        tc,
+                        work_item_id=wid,
+                        base_url=base,
+                        project_id=doc_project,
+                    ),
+                )
+                adapter.update_testcase_setup_teardown(
+                    wid,
+                    setup_html=resolve_workitem_setup_html(tc),
+                    teardown_html=tc["teardown_html"],
                 )
         adapter.publish_livedoc_home_page(
             space,
@@ -303,6 +317,7 @@ def main(argv: list[str] | None = None) -> int:
             trace=trace,
             tests=tests,
             work_item_ids=ids,
+            document_summary_html=livedoc_summary,
         )
         print("Updated LiveDoc home page:", livedoc_url)
         return 0
@@ -337,13 +352,20 @@ def main(argv: list[str] | None = None) -> int:
         meta = resolve_testcase_metadata(tc, epic_defaults=epic_metadata_defaults)
         wid = adapter.create_testcase(
             title=tc["title"],
-            description_html=tc.get(
-                "description_html", TESTCASE_WORKITEM_DESCRIPTION_HTML
-            ),
-            setup_html=tc["setup_html"],
+            description_html=TESTCASE_WORKITEM_DESCRIPTION_HTML,
+            setup_html=resolve_workitem_setup_html(tc),
             teardown_html=tc["teardown_html"],
             metadata=meta,
             status="draft",
+        )
+        adapter.update_testcase_description(
+            wid,
+            resolve_workitem_description_html(
+                tc,
+                work_item_id=wid,
+                base_url=base,
+                project_id=doc_project,
+            ),
         )
         adapter.add_test_steps(wid, tc["steps"])
         adapter.move_workitem_to_document(wid, target_document=target_document)
@@ -359,6 +381,7 @@ def main(argv: list[str] | None = None) -> int:
         trace=trace,
         tests=tests,
         work_item_ids=created_ids,
+        document_summary_html=livedoc_summary,
     )
     print("\nUpdated LiveDoc home page with embedded descriptions and test-step tables.")
     print("\nDone.")

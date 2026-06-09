@@ -104,11 +104,42 @@ class TestBuildLivedocHomeHtml(unittest.TestCase):
         )
         self.assertIn("font-size:16pt", html_out)
         self.assertNotRegex(html_out, r'<p style="[^"]*font-size:16pt')
-        tc_title = html_out.split("module-workitem", 1)[1]
-        self.assertIn("font-size:12pt", tc_title)
-        self.assertIn("text-decoration:underline", tc_title)
-        self.assertIn(">TC-01 Example</span>", tc_title)
-        self.assertNotRegex(tc_title, r'<p style="[^"]*font-size:12pt')
+        tc_body = html_out.split("module-workitem", 1)[1]
+        self.assertNotIn("text-decoration:underline", tc_body)
+        self.assertIn("module-workitem", tc_body)
+
+    def test_document_summary_replaces_contents_list(self) -> None:
+        summary = (
+            '<p style="font-weight:bold;">Bond CNI and xmitHashPolicy</p>'
+            "<p>Intro text.</p>"
+            '<p style="font-weight:bold;">Test cases</p>'
+            "<ul><li>TC-01 Example</li></ul>"
+        )
+        html_out = build_livedoc_home_html(
+            document_h1_title="Doc",
+            trace=_TRACE,
+            tests=[
+                {
+                    "title": "TC-01 Example",
+                    "purpose": "p",
+                    "pass_fail": "pf",
+                    "setup_html": "<p>S</p>",
+                    "teardown_html": "<p>T</p>",
+                    "steps": [("do", "see")],
+                },
+            ],
+            project_id="OCP",
+            base_url="https://example.com",
+            work_item_ids=["OCP-99999"],
+            document_summary_html=summary,
+        )
+        intro_end = html_out.find("module-workitem")
+        intro = html_out[:intro_end]
+        self.assertIn("Bond CNI and xmitHashPolicy", intro)
+        self.assertIn("TC-01 Example</li>", intro)
+        self.assertNotIn(">Contents</span>", intro)
+        tc_body = html_out[intro_end:]
+        self.assertEqual(tc_body.count(">Requirements</span>"), 0)
 
 
 if __name__ == "__main__":

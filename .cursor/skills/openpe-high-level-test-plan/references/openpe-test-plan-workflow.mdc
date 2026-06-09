@@ -1,0 +1,18 @@
+---
+description: OpenPERouter high-level test plan draft vs publish and Phase 1 gate
+---
+
+# OpenPERouter high-level test plan workflow
+
+## Draft vs publish
+
+| User intent | Agent action |
+| ----------- | ------------ |
+| Create / generate high-level plan | Validate; return **full markdown in chat**. Do **not** publish to Google Docs. |
+| Publish / upload high-level plan to Google Docs | `scripts/validate_and_publish_test_plan.sh` with stdin markdown; return Docs URL. |
+
+## Phase gate
+
+Do **not** start `openpe-detailed-test-plan`, Polarion procedure publish, Phase 3 execution, or Phase 4 automation for the same Epic until the user **explicitly approves** the high-level plan.
+
+Full phase map: `.cursor/skills/openpe-detailed-test-plan/references/openpe-qe-lifecycle.mdc`.

@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import html
 import os
+import re
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -31,7 +32,7 @@ def read_env_values(env_file: Path) -> dict[str, str]:
 
 
 # Process environment overrides for one-off runs (export VAR=... wins over .env for these keys).
-_QE_SHELL_OVERRIDE_PREFIXES = ("POLARION_", "METALLB_", "JIRA_")
+_QE_SHELL_OVERRIDE_PREFIXES = ("POLARION_", "METALLB_", "BOND_CNI_", "OPENPE_", "JIRA_")
 _QE_SHELL_OVERRIDE_EXACT: frozenset[str] = frozenset({"KUBECONFIG"})
 
 
@@ -39,8 +40,9 @@ def read_qe_env(env_file: Path) -> dict[str, str]:
     """
     Load ``.env`` then overlay matching variables from ``os.environ``.
 
-    Use this for publish scripts so operators can pass ``METALLB_JIRA_EPIC_KEY``,
-    ``POLARION_TRACE_*``, or ``KUBECONFIG`` from the shell without editing ``.env``.
+    Use this for publish scripts so operators can pass domain epic keys
+    (``METALLB_*`` / ``BOND_CNI_*`` / ``OPENPE_*``), ``POLARION_TRACE_*``, or
+    ``KUBECONFIG`` from the shell without editing ``.env``.
     """
     values = read_env_values(env_file)
     for key, raw in os.environ.items():
@@ -66,6 +68,42 @@ def build_livedoc_portal_url(
     """
     base = base_url.rstrip("/")
     return f"{base}/polarion/#/project/{project_id}/wiki/{space_id}/{module_name}"
+
+
+def livedoc_module_location(space_id: str, module_name: str) -> str:
+    """Polarion module location for SOAP ``getModuleByLocation`` (``{space}/{moduleName}``)."""
+    return f"{space_id}/{module_name}"
+
+
+def _soap_login_session_id(*, base_url: str, token: str, http_client: Any) -> str:
+    session_url = f"{base_url.rstrip('/')}/polarion/ws/services/SessionWebService"
+    body = f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ses="http://ws.polarion.com/SessionWebService">
+  <soapenv:Body><ses:logInWithToken><ses:mechanism>AccessToken</ses:mechanism><ses:username></ses:username><ses:token>{html.escape(token)}</ses:token></ses:logInWithToken></soapenv:Body>
+</soapenv:Envelope>"""
+    resp = http_client.post(
+        session_url,
+        content=body.encode(),
+        headers={"Content-Type": "text/xml; charset=utf-8", "SOAPAction": "logInWithToken"},
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Polarion SOAP login failed (HTTP {resp.status_code})")
+    match = re.search(r"<ns1:sessionID[^>]*>([^<]+)</ns1:sessionID>", resp.text)
+    if not match:
+        raise RuntimeError("Polarion SOAP login response missing sessionID")
+    return match.group(1)
+
+
+def _soap_tracker_call(*, base_url: str, session_id: str, body: str, action: str, http_client: Any) -> str:
+    tracker_url = f"{base_url.rstrip('/')}/polarion/ws/services/TrackerWebService"
+    resp = http_client.post(
+        tracker_url,
+        content=body.encode(),
+        headers={"Content-Type": "text/xml; charset=utf-8", "SOAPAction": action},
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Polarion SOAP {action} failed (HTTP {resp.status_code})")
+    return resp.text
 
 
 def build_livedoc_portal_url_from_target(
@@ -206,10 +244,15 @@ class PolarionAdapter:
                 "Install it with: pip install polarion-rest-client"
             ) from exc
 
-        os.environ["POLARION_URL"] = self.base_url
-        os.environ["POLARION_TOKEN"] = self.token
+        kwargs: dict[str, Any] = {
+            "base_url": self.base_url,
+            "token": self.token,
+        }
+        token_type = os.environ.get("POLARION_TOKEN_TYPE", "").strip().lower()
+        if token_type == "jwt":
+            kwargs["headers"] = {"X-Polarion-token-type": "jwt"}
 
-        return prc.PolarionClient(**prc.get_env_vars())
+        return prc.PolarionClient(**kwargs)
 
     def get_project(self) -> dict:
         from polarion_rest_client.project import Project
@@ -271,6 +314,7 @@ class PolarionAdapter:
         trace: dict[str, str],
         tests: list[dict[str, Any]],
         work_item_ids: Sequence[str],
+        document_summary_html: str = "",
     ) -> dict:
         """
         Build standard testcase-collection HTML (via `polarion_livedoc`) and PATCH the LiveDoc home page.
@@ -288,6 +332,7 @@ class PolarionAdapter:
             project_id=self.project_id,
             base_url=self.base_url,
             work_item_ids=work_item_ids,
+            document_summary_html=document_summary_html,
         )
         return self.update_document_home_page(space_id, document_name, html_body=body)
 
@@ -296,6 +341,80 @@ class PolarionAdapter:
         return build_livedoc_portal_url(
             self.base_url, self.project_id, space_id, module_name
         )
+
+    def delete_livedoc_module(
+        self,
+        space_id: str,
+        module_name: str,
+        *,
+        project_id: str | None = None,
+        confirmed: bool = False,
+    ) -> None:
+        """
+        Delete a LiveDoc module (document).
+
+        Polarion REST returns HTTP 405 for document DELETE. Deletion uses SOAP
+        ``TrackerWebService.getModuleByLocation`` + ``deleteModule`` with the same
+        ``POLARION_TOKEN`` as REST (``SessionWebService.logInWithToken``).
+
+        Pass ``confirmed=True`` only after the user has approved deletion **twice** in chat
+        (see ``adapters.polarion_deletion`` and ``metallb-polarion-deletion-guardrails``).
+        """
+        if not confirmed:
+            raise ValueError(
+                "Refusing to delete LiveDoc without confirmed=True. Build a deletion plan "
+                "(build_livedoc_deletion_plan), show invalid links to the user, obtain double "
+                "explicit confirmation in chat, then call delete scripts with matching "
+                "--confirm-token and --confirm-final."
+            )
+        proj = project_id or self.project_id
+        http_client = self.client.gen.get_httpx_client()
+        session_id = _soap_login_session_id(
+            base_url=self.base_url, token=self.token, http_client=http_client
+        )
+        location = livedoc_module_location(space_id, module_name)
+        get_body = f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tra="http://ws.polarion.com/TrackerWebService">
+  <soapenv:Header><ns1:sessionID xmlns:ns1="http://ws.polarion.com/session">{session_id}</ns1:sessionID></soapenv:Header>
+  <soapenv:Body><tra:getModuleByLocation><tra:projectId>{html.escape(proj)}</tra:projectId><tra:location>{html.escape(location)}</tra:location></tra:getModuleByLocation></soapenv:Body>
+</soapenv:Envelope>"""
+        get_xml = _soap_tracker_call(
+            base_url=self.base_url,
+            session_id=session_id,
+            body=get_body,
+            action="getModuleByLocation",
+            http_client=http_client,
+        )
+        if "Fault" in get_xml:
+            fault = re.search(r"<faultstring>([^<]+)</faultstring>", get_xml)
+            raise RuntimeError(
+                f"Polarion getModuleByLocation failed for {proj}/{location}: "
+                f"{fault.group(1) if fault else get_xml[:300]}"
+            )
+        uri_match = re.search(r'uri="([^"]+)"', get_xml)
+        if not uri_match:
+            raise RuntimeError(
+                f"Polarion getModuleByLocation returned no module URI for {proj}/{location}"
+            )
+        module_uri = uri_match.group(1)
+        delete_body = f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tra="http://ws.polarion.com/TrackerWebService">
+  <soapenv:Header><ns1:sessionID xmlns:ns1="http://ws.polarion.com/session">{session_id}</ns1:sessionID></soapenv:Header>
+  <soapenv:Body><tra:deleteModule><tra:moduleURI>{html.escape(module_uri)}</tra:moduleURI></tra:deleteModule></soapenv:Body>
+</soapenv:Envelope>"""
+        delete_xml = _soap_tracker_call(
+            base_url=self.base_url,
+            session_id=session_id,
+            body=delete_body,
+            action="deleteModule",
+            http_client=http_client,
+        )
+        if "deleteModuleResponse" not in delete_xml:
+            fault = re.search(r"<faultstring>([^<]+)</faultstring>", delete_xml)
+            raise RuntimeError(
+                f"Polarion deleteModule failed for {module_uri}: "
+                f"{fault.group(1) if fault else delete_xml[:300]}"
+            )
 
     def create_module_document(
         self,
@@ -383,6 +502,25 @@ class PolarionAdapter:
             attributes=metadata,
         )
 
+    def update_testcase_setup_teardown(
+        self,
+        work_item_id: str,
+        *,
+        setup_html: str,
+        teardown_html: str,
+    ) -> None:
+        """PATCH testcase Setup and Teardown (HTML)."""
+        from polarion_rest_client.workitem import WorkItem
+
+        WorkItem(self.client).update(
+            self.project_id,
+            work_item_id,
+            attributes={
+                "setup": polarion_html_field(setup_html),
+                "teardown": polarion_html_field(teardown_html),
+            },
+        )
+
     def add_test_steps(
         self,
         work_item_id: str,
@@ -452,6 +590,39 @@ class PolarionAdapter:
         if not work_item_ids:
             return
         WorkItem(self.client).delete(self.project_id, list(work_item_ids))
+
+    def list_work_item_attachments(self, work_item_id: str) -> list[dict[str, Any]]:
+        """List attachments on a testcase work item."""
+        from polarion_rest_client.workitem_attachment import WorkItemAttachment
+
+        return WorkItemAttachment(self.client).list(self.project_id, work_item_id)
+
+    def upload_work_item_attachment(
+        self,
+        work_item_id: str,
+        file_path: Path | str,
+        *,
+        title: str | None = None,
+        mime_type: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Upload a file attachment to a work item.
+
+        Uses ``WorkItemAttachment.create`` (multipart: file part before resource JSON).
+        """
+        from polarion_rest_client.workitem_attachment import WorkItemAttachment
+
+        path = Path(file_path)
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        return WorkItemAttachment(self.client).create(
+            self.project_id,
+            work_item_id,
+            file_data=path.read_bytes(),
+            file_name=path.name,
+            title=title or path.name,
+            mime_type=mime_type,
+        )
 
     def move_workitem_to_document(
         self,

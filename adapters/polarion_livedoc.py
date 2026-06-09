@@ -13,7 +13,7 @@ import re
 from typing import Any, Sequence
 
 from .polarion_adapter import html_section_label, module_workitem_macro_div
-from .polarion_test_publish import livedoc_purpose_pass_fail_html, traceability_ul
+from .polarion_test_publish import format_step_action_html, livedoc_purpose_pass_fail_html, traceability_ul
 
 _FORBIDDEN_SECTION_TITLE = "linked polarion test cases"
 _HEADING_TAG_RE = re.compile(r"<h[1-6][\s>]", re.IGNORECASE)
@@ -57,6 +57,46 @@ def validate_livedoc_home_html_policy(
             )
 
 
+def livedoc_section_divider_html() -> str:
+    """Visible section break on Polarion LiveDoc (plain ``<hr/>`` is often too faint)."""
+    return (
+        '<hr style="border:0;border-top:1px solid #bdbdbd;margin:1.5em 0 1em 0;"/>'
+    )
+
+
+def livedoc_testcase_portal_and_macro_html(
+    *,
+    work_item_id: str,
+    base_url: str,
+    project_id: str,
+) -> str:
+    """
+    Portal link and ``module-workitem`` macro on one row (avoids extra vertical gap on LiveDoc).
+
+    The macro still expands the work item Description beside the open button; this keeps
+    the ``Polarion test case: OCP-xxxxx`` label on the same line as that control.
+    """
+    base = base_url.rstrip("/")
+    portal = f"{base}/polarion/redirect/project/{project_id}/workitem?id={work_item_id}"
+    link = (
+        '<p style="margin:0;">'
+        "<strong>Polarion test case:</strong> "
+        f'<a href="{html.escape(portal, quote=True)}">{html.escape(work_item_id)}</a>'
+        "</p>"
+    )
+    macro = module_workitem_macro_div(work_item_id)
+    return (
+        '<table style="border-collapse:collapse;border:none;width:100%;'
+        'margin-top:1em;margin-bottom:0.5em;">'
+        "<tbody><tr>"
+        '<td style="border:none;padding:0 8px 0 0;vertical-align:middle;white-space:nowrap;">'
+        f"{link}</td>"
+        '<td style="border:none;padding:0;vertical-align:middle;">'
+        f"{macro}</td>"
+        "</tr></tbody></table>"
+    )
+
+
 def build_livedoc_home_html(
     *,
     document_h1_title: str,
@@ -65,6 +105,7 @@ def build_livedoc_home_html(
     project_id: str,
     base_url: str,
     work_item_ids: Sequence[str],
+    document_summary_html: str = "",
 ) -> str:
     """
     Build full HTML for a LiveDoc module home page.
@@ -92,32 +133,42 @@ def build_livedoc_home_html(
             font_size="16pt",
         )
     )
-    chunks.append(html_section_label("Contents", margin_top="1em"))
-    chunks.append("<ul>")
-    for tc in tests:
-        chunks.append(f"<li>{html.escape(tc['title'])}</li>")
-    chunks.append("</ul>")
+    summary = str(document_summary_html).strip()
+    if summary:
+        chunks.append(summary)
+    else:
+        chunks.append(html_section_label("Contents", margin_top="1em"))
+        chunks.append("<ul>")
+        for tc in tests:
+            chunks.append(f"<li>{html.escape(tc['title'])}</li>")
+        chunks.append("</ul>")
+
+    chunks.append(livedoc_section_divider_html())
+
+    omit_testcase_requirements = bool(summary) or any(
+        str(tc.get("setup_workitem_html", "")).strip()
+        or str(tc.get("requirements_html", "")).strip()
+        or str(tc.get("description_html", "")).strip()
+        for tc in tests
+    )
 
     for tc, wid in zip(tests, ids, strict=True):
-        portal = f"{base}/polarion/redirect/project/{project_id}/workitem?id={wid}"
-        chunks.append(module_workitem_macro_div(wid))
         chunks.append(
-            html_section_label(
-                tc["title"],
-                margin_top="1.5em",
-                font_size="12pt",
-                text_decoration="underline",
+            livedoc_testcase_portal_and_macro_html(
+                work_item_id=wid,
+                base_url=base,
+                project_id=project_id,
             )
-        )
-        chunks.append(
-            "<p><strong>Polarion test case:</strong> "
-            f'<a href="{html.escape(portal, quote=True)}">{html.escape(wid)}</a></p>'
         )
 
         chunks.append(
             html_section_label("Traceability", margin_top="1em", margin_bottom="0.4em")
             + traceability_ul(trace)
         )
+        if not omit_testcase_requirements:
+            requirements = str(tc.get("requirements_html", "")).strip()
+            if requirements:
+                chunks.append(requirements)
         purpose = str(tc["purpose"]).strip()
         pass_fail = str(tc["pass_fail"]).strip()
         chunks.append(livedoc_purpose_pass_fail_html(purpose, pass_fail))
@@ -154,7 +205,7 @@ def build_livedoc_home_html(
             chunks.append("<tr>")
             chunks.append(
                 '<td style="vertical-align:top;width:50%;">'
-                + _cell.format(html.escape(step_text))
+                + format_step_action_html(step_text)
                 + "</td>"
             )
             chunks.append(
@@ -169,7 +220,7 @@ def build_livedoc_home_html(
             html_section_label("Teardown", margin_top="1em", margin_bottom="0.4em")
         )
         chunks.append(tc["teardown_html"])
-        chunks.append("<hr/>")
+        chunks.append(livedoc_section_divider_html())
 
     out = "\n".join(chunks)
     validate_livedoc_home_html_policy(out, work_item_ids=ids)

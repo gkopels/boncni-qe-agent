@@ -1,0 +1,48 @@
+---
+description: Four-phase OpenPERouter QE cycle with mandatory user validation gates between phases
+---
+
+# OpenPERouter QE lifecycle (phases and gates)
+
+This workspace follows a **four-phase** QE cycle for each Jira Epic that represents an OpenPERouter feature. The agent must treat phases as **sequential** and must **not** start the next phase until the user **explicitly validates and approves** completion of the current phase.
+
+## Phase map
+
+| Phase | Name | Primary deliverable | Gate |
+| ----- | ---- | ------------------- | ---- |
+| 1 | High-level test plan | Chat draft → Google Doc when user requests publish → peer + developer review | User confirms review/approval satisfied |
+| 2 | Detailed test plan | Google Doc + cluster validation notes | User approves detailed Doc; then Polarion (see below) |
+| 3 | Test case first execution | Tabular run results vs Polarion testcase IDs on a **second** cluster | User approves proceeding to automation |
+| 4 | Test automation | Tests on a **user-owned clone** branch; CI green on **user's GitHub**; **no PR** | User closes the cycle or requests changes |
+
+## Phase 1 — High-level test plan
+
+- **Inputs:** Jira Epic link/key; optional design doc links.
+- **Agent (draft):** Apply skill `openpe-high-level-test-plan`; Jira via `adapters/jira_adapter.py` and `.env` `JIRA_*`; analyze `openperouter` under `.cursor/workspaces/openpe-repo-analysis/`; validate draft; return **full plan in chat**—**do not** publish to Google Docs unless the user explicitly asks.
+- **Agent (publish):** When the user asks to publish, run `scripts/validate_and_publish_test_plan.sh` (stdin markdown).
+- **Gate:** Do **not** start detailed plan, Polarion procedures, or automation until the user states the **high-level plan is approved**.
+
+## Phase 2 — Detailed test plan
+
+- **Inputs:** Approved high-level plan; optional **`KUBECONFIG`** for a dedicated test OpenShift cluster.
+- **Agent:** Apply skill `openpe-detailed-test-plan`; publish via `scripts/validate_and_publish_detailed_test_plan.sh`.
+- **With `KUBECONFIG`:** Exercise every TC; Expected blocks use **`Run:` + `Sample output:`**. Keep a current checkout of `openperouter` under `.cursor/workspaces/openpe-repo-analysis/`.
+- **Bug vs procedure:** Confirmed product defect → Jira `project = OCPBUGS`, **component = `Networking / OpenPERouter`** (confirm with user if the component name differs in Jira). Procedure error → fix plan and re-validate.
+- **Polarion (after Doc approval only):** New LiveDoc under OpenShift **`CNF`** (default space **`CNF`** unless `POLARION_SPACE_ID` is set). Follow `openpe-polarion-test-publish` and `openpe-polarion-livedoc-workflow.mdc`.
+- **Gate:** Do not start Phase 3/4 until detailed plan approved and Polarion done or explicitly deferred.
+
+## Phase 3 — Test case first execution
+
+- **Inputs:** Polarion testcase IDs; **`KUBECONFIG`** (prefer a different cluster than Phase 2).
+- **Agent:** Apply `openpe-manual-test-execution`. Report a results **table**.
+- **Gate:** User approves before Phase 4.
+
+## Phase 4 — Test automation (user fork)
+
+- **Inputs:** User's GitHub fork URL; branch convention; target repo (typically `openperouter/openperouter` or the user's fork).
+- **Agent:** Apply `openpe-e2e-automation`. Create a test branch, add/extend tests following upstream patterns, push for GitHub Actions. **Do not open a PR** unless the user explicitly asks.
+
+## Conflicts and precedence
+
+- Skipping a phase requires an **explicit** user statement.
+- No local tracked test-plan markdown; publish scripts only; Polarion home-page policy remains in force.

@@ -8,6 +8,7 @@ loaded by ``scripts/publish_polarion_livedoc_tests.py`` (see ``examples/polarion
 from __future__ import annotations
 
 import html
+import re
 from typing import Any, Mapping
 
 from adapters.polarion_adapter import PolarionAdapter, html_paragraph, html_section_label
@@ -61,11 +62,12 @@ def merge_traceability_from_env(
     Precedence for each field:
 
     1. ``POLARION_TRACE_*`` in the merged env (highest).
-    2. ``METALLB_*`` convenience keys when the corresponding ``POLARION_TRACE_*`` was **not** set.
+    2. ``METALLB_*``, ``BOND_CNI_*``, or ``OPENPE_*`` convenience keys when the
+       corresponding ``POLARION_TRACE_*`` was **not** set.
     3. Values already in ``base`` (from the epic module).
 
-    ``METALLB_JIRA_EPIC_KEY`` sets ``epic_label`` and, unless ``POLARION_TRACE_EPIC_URL`` is set,
-    ``epic_url`` as ``{METALLB_JIRA_BROWSE_URL_BASE}/{key}`` (default browse base is Red Hat issues).
+    Domain ``*_JIRA_EPIC_KEY`` sets ``epic_label`` and, unless ``POLARION_TRACE_EPIC_URL``
+    is set, ``epic_url`` as ``{browse_base}/{key}`` (default browse base is Red Hat issues).
     """
     out = dict(base)
     for env_key, trace_key in _TRACE_ENV:
@@ -73,19 +75,35 @@ def merge_traceability_from_env(
         if v:
             out[trace_key] = v
 
-    epic_key = env.get("METALLB_JIRA_EPIC_KEY", "").strip()
-    browse_base = env.get("METALLB_JIRA_BROWSE_URL_BASE", "https://issues.redhat.com/browse").rstrip("/")
+    epic_key = (
+        env.get("METALLB_JIRA_EPIC_KEY", "").strip()
+        or env.get("BOND_CNI_JIRA_EPIC_KEY", "").strip()
+        or env.get("OPENPE_JIRA_EPIC_KEY", "").strip()
+    )
+    browse_base = (
+        env.get("METALLB_JIRA_BROWSE_URL_BASE", "").strip()
+        or env.get("BOND_CNI_JIRA_BROWSE_URL_BASE", "").strip()
+        or env.get("OPENPE_JIRA_BROWSE_URL_BASE", "https://issues.redhat.com/browse")
+    ).rstrip("/")
     if epic_key:
         if not env.get("POLARION_TRACE_EPIC_LABEL", "").strip():
             out["epic_label"] = epic_key
         if not env.get("POLARION_TRACE_EPIC_URL", "").strip():
             out["epic_url"] = f"{browse_base}/{epic_key}"
 
-    hl = env.get("METALLB_HIGH_LEVEL_PLAN_URL", "").strip()
+    hl = (
+        env.get("METALLB_HIGH_LEVEL_PLAN_URL", "").strip()
+        or env.get("BOND_CNI_HIGH_LEVEL_PLAN_URL", "").strip()
+        or env.get("OPENPE_HIGH_LEVEL_PLAN_URL", "").strip()
+    )
     if hl and not env.get("POLARION_TRACE_HIGH_LEVEL_PLAN_URL", "").strip():
         out["high_level_plan_url"] = hl
 
-    dl = env.get("METALLB_DETAILED_PLAN_URL", "").strip()
+    dl = (
+        env.get("METALLB_DETAILED_PLAN_URL", "").strip()
+        or env.get("BOND_CNI_DETAILED_PLAN_URL", "").strip()
+        or env.get("OPENPE_DETAILED_PLAN_URL", "").strip()
+    )
     if dl and not env.get("POLARION_TRACE_DETAILED_PLAN_URL", "").strip():
         out["detailed_plan_url"] = dl
 
@@ -119,9 +137,53 @@ def traceability_ul(trace: Mapping[str, str]) -> str:
     )
 
 
-# WI Description is left empty so the LiveDoc ``module-workitem`` macro does not duplicate
-# Traceability / Purpose / Pass-fail that appear on the home page under each test.
+# Default WI Description when epic does not set ``description_html``.
 TESTCASE_WORKITEM_DESCRIPTION_HTML = ""
+
+
+def testcase_portal_description_html(
+    *,
+    work_item_id: str,
+    base_url: str,
+    project_id: str,
+) -> str:
+    """Work item Description: portal link only (inline with module-workitem macro on LiveDoc)."""
+    base = base_url.rstrip("/")
+    portal = f"{base}/polarion/redirect/project/{project_id}/workitem?id={work_item_id}"
+    return (
+        "<p><strong>Polarion test case:</strong> "
+        f'<a href="{html.escape(portal, quote=True)}">{html.escape(work_item_id)}</a></p>'
+    )
+
+
+def resolve_workitem_description_html(
+    testcase: Mapping[str, Any],
+    *,
+    work_item_id: str,
+    base_url: str,
+    project_id: str,
+) -> str:
+    """Description for the testcase work item (macro expands this on the LiveDoc home page)."""
+    custom = str(testcase.get("description_html", "")).strip()
+    if custom:
+        return custom
+    return testcase_portal_description_html(
+        work_item_id=work_item_id,
+        base_url=base_url,
+        project_id=project_id,
+    )
+
+
+def resolve_workitem_setup_html(testcase: Mapping[str, Any]) -> str:
+    """Setup HTML stored on the testcase work item (may include Requirements)."""
+    workitem_setup = str(testcase.get("setup_workitem_html", "")).strip()
+    if workitem_setup:
+        return workitem_setup
+    requirements = str(testcase.get("requirements_html", "")).strip()
+    base = str(testcase["setup_html"])
+    if requirements:
+        return requirements + base
+    return base
 
 
 def expected_sample_output(verify_command: str, sample: str) -> str:
@@ -135,6 +197,40 @@ def expected_sample_output(verify_command: str, sample: str) -> str:
     if not cmd.lower().startswith("run:"):
         cmd = f"Run: {cmd}"
     return f"{cmd}\n\nSample output:\n{sample.strip()}"
+
+
+_CMD_LINE_RE = re.compile(
+    r"^(oc |cat |grep |ping6? |testcmd |awk |ip |for |TX1=|echo )",
+    re.IGNORECASE,
+)
+
+
+def format_step_action_html(step_text: str) -> str:
+    """
+    LiveDoc Step column: prose lines normal; shell/command lines in bold monospace.
+    """
+    _cmd_style = (
+        'margin:0.25em 0;font-family:monospace,monospace;'
+        "font-size:12px;line-height:1.4;white-space:pre-wrap;"
+    )
+    chunks: list[str] = []
+    for raw_line in step_text.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        segments = re.split(r"(?<=[.;])\s+", line) if "; " in line else [line]
+        for seg in segments:
+            seg = seg.strip()
+            if not seg:
+                continue
+            esc = html.escape(seg)
+            if _CMD_LINE_RE.match(seg):
+                chunks.append(
+                    f'<div style="{_cmd_style}"><strong>{esc}</strong></div>'
+                )
+            else:
+                chunks.append(f'<div style="margin:0.25em 0;">{esc}</div>')
+    return "".join(chunks) if chunks else html.escape(step_text)
 
 
 def livedoc_purpose_pass_fail_html(purpose: str, pass_fail: str) -> str:
