@@ -1,0 +1,28 @@
+# One MetalLB pool per customer (EVPN VRF VIPs)
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: pool-customer-a
+  namespace: metallb-system
+spec:
+  addresses:
+    - 4.4.4.0/24
+  autoAssign: true
+  avoidBuggyIPs: true
+  serviceAllocation:
+    namespaces:
+      - customer-a
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: pool-customer-b
+  namespace: metallb-system
+spec:
+  addresses:
+    - 5.5.5.0/24
+  autoAssign: true
+  avoidBuggyIPs: true
+  serviceAllocation:
+    namespaces:
+      - customer-b

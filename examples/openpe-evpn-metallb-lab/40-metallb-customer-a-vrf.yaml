@@ -1,0 +1,59 @@
+# Per-node peers so TCP source matches OpenPE hostSession IPs (.3 / .4)
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: openpe-customer-a-worker0
+  namespace: metallb-system
+spec:
+  myASN: 64515
+  peerASN: 64514
+  peerAddress: 172.16.20.1
+  sourceAddress: 172.16.20.3
+  nodeSelectors:
+    - matchLabels:
+        kubernetes.io/hostname: worker0
+---
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: openpe-customer-a-worker1
+  namespace: metallb-system
+spec:
+  myASN: 64515
+  peerASN: 64514
+  peerAddress: 172.16.20.1
+  sourceAddress: 172.16.20.4
+  nodeSelectors:
+    - matchLabels:
+        kubernetes.io/hostname: worker1
+---
+apiVersion: metallb.io/v1beta1
+kind: BGPAdvertisement
+metadata:
+  name: customer-a-vrf-advertisement
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - pool-customer-a
+  peers:
+    - openpe-customer-a-worker0
+    - openpe-customer-a-worker1
+---
+apiVersion: frrk8s.metallb.io/v1beta1
+kind: FRRConfiguration
+metadata:
+  name: receive-from-openpe-customer-a
+  namespace: openshift-frr-k8s
+spec:
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
+  bgp:
+    routers:
+      - asn: 64515
+        neighbors:
+          - address: 172.16.20.1
+            asn: 64514
+            toReceive:
+              allowed:
+                mode: all

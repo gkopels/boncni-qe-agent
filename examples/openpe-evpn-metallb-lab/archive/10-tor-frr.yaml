@@ -1,0 +1,133 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openpe-tor-frr
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: tor-ens1f1
+  namespace: openpe-tor-frr
+spec:
+  config: |
+    {
+      "cniVersion": "0.3.1",
+      "name": "tor-ens1f1",
+      "type": "macvlan",
+      "master": "ens1f1np1",
+      "mode": "bridge",
+      "ipam": {
+        "type": "static",
+        "addresses": [
+          {
+            "address": "10.100.100.254/24"
+          }
+        ]
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frr-tor-config
+  namespace: openpe-tor-frr
+data:
+  daemons: |
+    zebra=yes
+    bgpd=yes
+    ospfd=no
+    ospf6d=no
+    ripd=no
+    ripngd=no
+    isisd=no
+    pimd=no
+    ldpd=no
+    nhrpd=no
+    eigrpd=no
+    babeld=no
+    sharpd=no
+    pbrd=no
+    bfdd=yes
+    fabricd=no
+    vrrpd=no
+    pathd=no
+    vtysh_enable=yes
+    zebra_options="  -A 127.0.0.1 -s 90000000"
+    bgpd_options="   -A 127.0.0.1"
+    bfdd_options="   -A 127.0.0.1"
+  vtysh.conf: |
+    service integrated-vtysh-config
+  frr.conf: |
+    frr version 8.5
+    frr defaults traditional
+    hostname frr-tor
+    log stdout
+    !
+    interface net1
+     description openpe-underlay-towards-ens1f0
+    !
+    router bgp 64512
+     bgp router-id 10.100.100.254
+     no bgp ebgp-requires-policy
+     no bgp default ipv4-unicast
+     neighbor OPENPE peer-group
+     neighbor OPENPE remote-as 64514
+     neighbor OPENPE timers 3 9
+     ! OpenPE underlay IPs — add/adjust when Underlay is applied
+     neighbor 10.100.100.10 peer-group OPENPE
+     neighbor 10.100.100.11 peer-group OPENPE
+     !
+     address-family ipv4 unicast
+      neighbor OPENPE activate
+      neighbor OPENPE next-hop-self
+     exit-address-family
+    !
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: frr-tor
+  namespace: openpe-tor-frr
+  annotations:
+    k8s.v1.cni.cncf.io/networks: tor-ens1f1
+  labels:
+    app: frr-tor
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: worker0
+  restartPolicy: Always
+  containers:
+    - name: frr
+      image: quay.io/ocp-edge-qe/frr:8.5.3
+      securityContext:
+        privileged: true
+      volumeMounts:
+        - name: frr-config
+          mountPath: /etc/frr
+      command:
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          # image entrypoints vary; start FRR explicitly
+          if [ -x /usr/lib/frr/docker-start ]; then
+            exec /usr/lib/frr/docker-start
+          fi
+          if [ -x /usr/lib/frr/frrinit.sh ]; then
+            /usr/lib/frr/frrinit.sh start
+          elif command -v /usr/libexec/frr/frrinit.sh >/dev/null; then
+            /usr/libexec/frr/frrinit.sh start
+          else
+            /usr/lib/frr/zebra -d -A 127.0.0.1
+            /usr/lib/frr/bgpd -d -A 127.0.0.1
+            /usr/lib/frr/bfdd -d -A 127.0.0.1 || true
+          fi
+          sleep infinity
+  volumes:
+    - name: frr-config
+      configMap:
+        name: frr-tor-config

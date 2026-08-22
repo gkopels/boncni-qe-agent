@@ -1,0 +1,41 @@
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: openpe-underlay-ip-worker0
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: worker0
+  desiredState:
+    interfaces:
+      - name: ens1f0np0
+        type: ethernet
+        state: up
+        ipv4:
+          enabled: true
+          dhcp: false
+          address:
+            - ip: 10.100.100.10
+              prefix-length: 24
+        ipv6:
+          enabled: false
+---
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: openpe-underlay-ip-worker1
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: worker1
+  desiredState:
+    interfaces:
+      - name: ens1f0np0
+        type: ethernet
+        state: up
+        ipv4:
+          enabled: true
+          dhcp: false
+          address:
+            - ip: 10.100.100.11
+              prefix-length: 24
+        ipv6:
+          enabled: false

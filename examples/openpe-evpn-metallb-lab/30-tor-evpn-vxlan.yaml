@@ -1,0 +1,240 @@
+# EVPN L2+L3 ToR PE: VRF customer-a (VNI 1001) + L2 VNI 1101 + host LAN bridge
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openpe-tor-frr
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: tor-ens1f1
+  namespace: openpe-tor-frr
+spec:
+  config: |
+    {
+      "cniVersion": "0.3.1",
+      "name": "tor-ens1f1",
+      "type": "macvlan",
+      "master": "ens1f1np1",
+      "mode": "bridge",
+      "ipam": {
+        "type": "static",
+        "addresses": [
+          {
+            "address": "10.100.100.254/24"
+          }
+        ]
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frr-tor-config
+  namespace: openpe-tor-frr
+data:
+  daemons: |
+    zebra=yes
+    bgpd=yes
+    ospfd=no
+    ospf6d=no
+    ripd=no
+    ripngd=no
+    isisd=no
+    pimd=no
+    ldpd=no
+    nhrpd=no
+    eigrpd=no
+    babeld=no
+    sharpd=no
+    pbrd=no
+    bfdd=yes
+    fabricd=no
+    vrrpd=no
+    pathd=no
+    vtysh_enable=yes
+    zebra_options="  -A 127.0.0.1 -s 90000000"
+    bgpd_options="   -A 127.0.0.1"
+    bfdd_options="   -A 127.0.0.1"
+  vtysh.conf: |
+    service integrated-vtysh-config
+  frr.conf: |
+    frr version 8.5
+    frr defaults traditional
+    hostname frr-tor
+    log stdout
+    !
+    vrf customer-a
+     vni 1001
+    exit-vrf
+    !
+    vrf customer-b
+     vni 1002
+    exit-vrf
+    !
+    interface lo
+     ip address 10.200.201.254/32
+    !
+    interface net1
+     description openpe-underlay-towards-ens1f0
+    !
+    router bgp 64512
+     bgp router-id 10.100.100.254
+     no bgp ebgp-requires-policy
+     no bgp default ipv4-unicast
+     neighbor OPENPE peer-group
+     neighbor OPENPE remote-as 64514
+     neighbor OPENPE timers 3 9
+     neighbor OPENPE capability extended-nexthop
+     neighbor 10.100.100.10 peer-group OPENPE
+     neighbor 10.100.100.11 peer-group OPENPE
+     !
+     address-family ipv4 unicast
+      network 10.200.201.254/32
+      neighbor OPENPE activate
+      neighbor OPENPE next-hop-self
+     exit-address-family
+     !
+     address-family l2vpn evpn
+      neighbor OPENPE activate
+      advertise-all-vni
+      advertise-svi-ip
+     exit-address-family
+    !
+    router bgp 64512 vrf customer-a
+     bgp router-id 10.100.100.254
+     no bgp ebgp-requires-policy
+     no bgp default ipv4-unicast
+     !
+     address-family ipv4 unicast
+      redistribute connected
+     exit-address-family
+     !
+     address-family l2vpn evpn
+      advertise ipv4 unicast
+      route-target import 64514:1001
+      route-target export 64514:1001
+     exit-address-family
+    !
+    router bgp 64512 vrf customer-b
+     bgp router-id 10.100.100.254
+     no bgp ebgp-requires-policy
+     no bgp default ipv4-unicast
+     !
+     address-family ipv4 unicast
+      redistribute connected
+     exit-address-family
+     !
+     address-family l2vpn evpn
+      advertise ipv4 unicast
+      route-target import 64514:1002
+      route-target export 64514:1002
+     exit-address-family
+    !
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: frr-tor
+  namespace: openpe-tor-frr
+  annotations:
+    k8s.v1.cni.cncf.io/networks: tor-ens1f1
+  labels:
+    app: frr-tor
+spec:
+  hostPID: true
+  nodeSelector:
+    kubernetes.io/hostname: worker0
+  restartPolicy: Always
+  containers:
+    - name: frr
+      image: quay.io/ocp-edge-qe/frr:8.5.3
+      securityContext:
+        privileged: true
+      volumeMounts:
+        - name: frr-config
+          mountPath: /etc/frr
+      command:
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+
+          VTEP=10.200.201.254
+
+          # setup_tenant <vrf> <table> <l3vni> <l2vni> <host_br> <veth_prefix>
+          setup_tenant() {
+            local VRF=$1 TABLE=$2 L3_VNI=$3 L2_VNI=$4 HOST_BR=$5 VETH=$6
+            local BR_L3=br-l3-${L3_VNI} VX_L3=vxlan${L3_VNI}
+            local BR_L2=br-l2-${L2_VNI} VX_L2=vxlan${L2_VNI}
+
+            ip link add ${VRF} type vrf table ${TABLE} 2>/dev/null || true
+            ip link set ${VRF} up
+
+            ip link add ${BR_L3} type bridge 2>/dev/null || true
+            ip link set ${BR_L3} master ${VRF} 2>/dev/null || true
+            ip link add ${VX_L3} type vxlan id ${L3_VNI} dstport 4789 local ${VTEP} nolearning 2>/dev/null || true
+            ip link set ${VX_L3} master ${BR_L3} 2>/dev/null || true
+            ip link set ${VX_L3} type bridge_slave neigh_suppress on learning off 2>/dev/null || true
+            ip link set ${VX_L3} up
+            ip link set ${BR_L3} up
+
+            ip link add ${BR_L2} type bridge 2>/dev/null || true
+            ip link set ${BR_L2} master ${VRF} 2>/dev/null || true
+            ip link add ${VX_L2} type vxlan id ${L2_VNI} dstport 4789 local ${VTEP} nolearning 2>/dev/null || true
+            ip link set ${VX_L2} master ${BR_L2} 2>/dev/null || true
+            ip link set ${VX_L2} type bridge_slave neigh_suppress on learning off 2>/dev/null || true
+            ip link set ${VX_L2} up
+            ip link set ${BR_L2} up
+
+            nsenter -t 1 -n ip link add ${HOST_BR} type bridge 2>/dev/null || true
+            nsenter -t 1 -n ip link set ${HOST_BR} up 2>/dev/null || true
+
+            if ! ip link show ${VETH}-c >/dev/null 2>&1; then
+              ip link add ${VETH}-c type veth peer name ${VETH}-h
+              ip link set ${VETH}-c master ${BR_L2}
+              ip link set ${VETH}-c up
+              ip link set ${VETH}-h netns 1
+              nsenter -t 1 -n ip link set ${VETH}-h master ${HOST_BR}
+              nsenter -t 1 -n ip link set ${VETH}-h up
+            else
+              ip link set ${VETH}-c master ${BR_L2} 2>/dev/null || true
+              ip link set ${VETH}-c up 2>/dev/null || true
+            fi
+          }
+
+          setup_overlay() {
+            ip addr add ${VTEP}/32 dev lo 2>/dev/null || true
+            # customer-a: L3 1001 / L2 1101
+            setup_tenant customer-a 1001 1001 1101 br-tor-a veth-tora
+            # customer-b: L3 1002 / L2 1102
+            setup_tenant customer-b 1002 1002 1102 br-tor-b veth-torb
+          }
+
+          setup_overlay
+
+          if [ -x /usr/lib/frr/docker-start ]; then
+            /usr/lib/frr/docker-start &
+          elif [ -x /usr/lib/frr/frrinit.sh ]; then
+            /usr/lib/frr/frrinit.sh start
+          else
+            /usr/lib/frr/zebra -d -A 127.0.0.1
+            /usr/lib/frr/bgpd -d -A 127.0.0.1
+            /usr/lib/frr/bfdd -d -A 127.0.0.1 || true
+          fi
+
+          sleep 3
+          setup_overlay
+          vtysh -c 'write memory' 2>/dev/null || true
+          if [ -x /usr/lib/frr/frrinit.sh ]; then
+            /usr/lib/frr/frrinit.sh reload 2>/dev/null || true
+          fi
+          sleep infinity
+  volumes:
+    - name: frr-config
+      configMap:
+        name: frr-tor-config

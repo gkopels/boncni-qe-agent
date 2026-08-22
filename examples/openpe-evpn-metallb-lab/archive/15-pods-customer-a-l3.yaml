@@ -1,0 +1,52 @@
+# Pods on L3VNI host session (172.16.20.0/24) → VRF customer-a
+apiVersion: v1
+kind: Pod
+metadata:
+  name: customer-a-l3-pod-w0
+  namespace: customer-a
+  annotations:
+    k8s.v1.cni.cncf.io/networks: |-
+      [{
+        "name": "customer-a-l3-macvlan",
+        "namespace": "customer-a",
+        "ips": ["172.16.20.10/24"]
+      }]
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: worker0
+  containers:
+    - name: net
+      image: quay.io/ocp-edge-qe/eco-gotests-network-client:v4.20
+      command:
+        - /bin/sh
+        - -c
+        - ip r del default dev eth0 || true; sleep infinity
+      securityContext:
+        capabilities:
+          add: ["NET_ADMIN"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: customer-a-l3-pod-w1
+  namespace: customer-a
+  annotations:
+    k8s.v1.cni.cncf.io/networks: |-
+      [{
+        "name": "customer-a-l3-macvlan",
+        "namespace": "customer-a",
+        "ips": ["172.16.20.11/24"]
+      }]
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: worker1
+  containers:
+    - name: net
+      image: quay.io/ocp-edge-qe/eco-gotests-network-client:v4.20
+      command:
+        - /bin/sh
+        - -c
+        - ip r del default dev eth0 || true; sleep infinity
+      securityContext:
+        capabilities:
+          add: ["NET_ADMIN"]
