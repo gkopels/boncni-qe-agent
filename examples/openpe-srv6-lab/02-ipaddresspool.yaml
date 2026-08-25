@@ -1,0 +1,14 @@
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: pool-customer-a
+  namespace: metallb-system
+spec:
+  addresses:
+    - 4.4.4.0/24
+    - 2001:db8:4:4::/64
+  autoAssign: true
+  avoidBuggyIPs: true
+  serviceAllocation:
+    namespaces:
+      - customer-a

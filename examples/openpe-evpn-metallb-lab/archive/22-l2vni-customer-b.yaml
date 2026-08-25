@@ -1,0 +1,21 @@
+apiVersion: network.openperouter.io/v1alpha1
+kind: L2VNI
+metadata:
+  name: customer-b-l2
+  namespace: openshift-openperouter
+spec:
+  vni: 1102
+  underlayAddressFamily: IPv4
+  gatewayIPs:
+    - 172.16.2.1/24
+  routingDomain:
+    type: L3VNI
+    l3vni:
+      name: customer-b
+  hostMaster:
+    type: LinuxBridge
+    linuxBridge:
+      lifecycle: Managed
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""

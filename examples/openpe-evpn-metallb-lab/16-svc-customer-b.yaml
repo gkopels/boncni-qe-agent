@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: customer-b
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: customer-b-web
+  namespace: customer-b
+  labels:
+    app: customer-b-web
+  annotations:
+    metallb.universe.tf/address-pool: pool-customer-b
+spec:
+  type: LoadBalancer
+  selector:
+    app: customer-b-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: customer-b-l3-w0
+  namespace: customer-b
+  labels:
+    app: customer-b-web
+spec:
+  restartPolicy: Always
+  nodeSelector:
+    kubernetes.io/hostname: worker0
+  containers:
+    - name: net
+      image: quay.io/ocp-edge-qe/eco-gotests-network-client:v4.20
+      ports:
+        - containerPort: 8080
+          name: http
+      command:
+        - /bin/bash
+        - -lc
+        - |
+          testcmd -listen -protocol tcp -port 8080 -interface eth0 &
+          sleep infinity
+      securityContext:
+        capabilities:
+          add: ["NET_ADMIN", "NET_RAW"]

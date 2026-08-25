@@ -1,0 +1,54 @@
+# SRv6 underlay: IS-IS + locator + IPv6 tunnel endpoints; dual-stack VTEP for L2 VXLAN
+apiVersion: network.openperouter.io/v1alpha1
+kind: Underlay
+metadata:
+  name: underlay
+  namespace: openshift-openperouter
+spec:
+  asn: 64514
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
+  routerIDCIDR: 10.200.200.0/24
+  tunnelEndpoint:
+    cidrs:
+      - 10.200.201.0/24
+      - 2001:db8:1234:5678::/64
+  interfaces:
+    - type: NetworkDevice
+      networkDevice:
+        interfaceName: ens1f0np0
+  neighbors:
+    # ToR SRv6 / VPNv4 leaf — use link IPv6 (reachable).
+    # Note: ToR lo 2001:db8:1234::1 is in IS-IS LSP but OpenPE may not install it;
+    # peer the on-link address until that is fixed.
+    - asn: 64520
+      address: fd00:64:100::254
+      addressFamilies:
+        - type: ipv4vpn
+        - type: ipv6vpn
+        - type: ipv6unicast
+      connectTimeSeconds: 5
+      keepaliveTimeSeconds: 3
+      holdTimeSeconds: 9
+    # ToR EVPN (L2) over IPv4 underlay
+    - asn: 64520
+      address: 10.100.100.254
+      addressFamilies:
+        - type: ipv4unicast
+        - type: evpn
+      connectTimeSeconds: 5
+      keepaliveTimeSeconds: 3
+      holdTimeSeconds: 9
+  isis:
+    baseNet: "49.0001.0002.0003.0004.00"
+    level: 1
+    features:
+      - advertisePassiveOnly
+    interfaces:
+      - name: ens1f0np0
+        ipFamily: IPv6
+  srv6:
+    locator:
+      basePrefix: "fd00:0:32::/48"
+      format: "usid-f3216"

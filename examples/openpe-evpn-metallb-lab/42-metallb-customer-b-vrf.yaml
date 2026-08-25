@@ -1,0 +1,59 @@
+# MetalLB advertises pool-customer-b (5.5.5.1) into VRF customer-b host session
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: openpe-customer-b-worker0
+  namespace: metallb-system
+spec:
+  myASN: 64515
+  peerASN: 64514
+  peerAddress: 172.16.21.1
+  sourceAddress: 172.16.21.3
+  nodeSelectors:
+    - matchLabels:
+        kubernetes.io/hostname: worker0
+---
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: openpe-customer-b-worker1
+  namespace: metallb-system
+spec:
+  myASN: 64515
+  peerASN: 64514
+  peerAddress: 172.16.21.1
+  sourceAddress: 172.16.21.4
+  nodeSelectors:
+    - matchLabels:
+        kubernetes.io/hostname: worker1
+---
+apiVersion: metallb.io/v1beta1
+kind: BGPAdvertisement
+metadata:
+  name: customer-b-vrf-advertisement
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - pool-customer-b
+  peers:
+    - openpe-customer-b-worker0
+    - openpe-customer-b-worker1
+---
+apiVersion: frrk8s.metallb.io/v1beta1
+kind: FRRConfiguration
+metadata:
+  name: receive-from-openpe-customer-b
+  namespace: openshift-frr-k8s
+spec:
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
+  bgp:
+    routers:
+      - asn: 64515
+        neighbors:
+          - address: 172.16.21.1
+            asn: 64514
+            toReceive:
+              allowed:
+                mode: all

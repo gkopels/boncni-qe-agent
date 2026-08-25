@@ -1,0 +1,59 @@
+# EVPN L2 "service" endpoint on VNI 1101 (same L2 domain as Multus pods).
+#
+# Note: MetalLB L2Advertisement on br-hs-1101 does NOT work for macvlan clients —
+# macvlan cannot ARP the host bridge. Instead the VIP lives on a Multus pod so
+# OpenPE advertises it via EVPN Type-2 like any other L2 endpoint.
+#
+# L3/SRv6 VIP (customer-a-web / 4.4.4.1) is unchanged.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: customer-a-l2-svc
+  namespace: customer-a
+  labels:
+    app: customer-a-web-l2
+  annotations:
+    k8s.v1.cni.cncf.io/networks: |-
+      [{
+        "name": "customer-a-macvlan",
+        "namespace": "customer-a",
+        "ips": ["172.16.1.100/24", "2001:db8:1::100/64"]
+      }]
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: worker0
+  containers:
+    - name: net
+      image: quay.io/ocp-edge-qe/eco-gotests-network-client:v4.20
+      command:
+        - /bin/bash
+        - -lc
+        - |
+          ip r del default dev eth0 || true
+          ip -6 r del default dev eth0 || true
+          ip -6 r replace default via 2001:db8:1::1 dev net1 || true
+          # Listen on EVPN L2 VIP (net1) and primary CNI (ClusterIP)
+          testcmd -listen -protocol tcp -port 80 -interface net1 &
+          testcmd -listen -protocol tcp -port 80 -interface eth0 &
+          sleep infinity
+      securityContext:
+        capabilities:
+          add: ["NET_ADMIN", "NET_RAW"]
+---
+# Optional ClusterIP for in-cluster discovery (hits primary CNI backends if labeled).
+# External/L2 clients should use 172.16.1.100 / 2001:db8:1::100 on net1.
+apiVersion: v1
+kind: Service
+metadata:
+  name: customer-a-web-l2
+  namespace: customer-a
+  labels:
+    app: customer-a-web-l2
+spec:
+  type: ClusterIP
+  selector:
+    app: customer-a-web-l2
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80

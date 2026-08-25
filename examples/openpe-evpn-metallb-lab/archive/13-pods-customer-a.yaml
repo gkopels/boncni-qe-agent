@@ -1,0 +1,52 @@
+# One pod per worker on customer-a L2 (IRB GW 172.16.1.1 → VRF customer-a)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: customer-a-l2-w0
+  namespace: customer-a
+  annotations:
+    k8s.v1.cni.cncf.io/networks: |-
+      [{
+        "name": "customer-a-macvlan",
+        "namespace": "customer-a",
+        "ips": ["172.16.1.10/24"]
+      }]
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: worker0
+  containers:
+    - name: net
+      image: quay.io/ocp-edge-qe/eco-gotests-network-client:v4.20
+      command:
+        - /bin/sh
+        - -c
+        - ip r del default dev eth0 || true; sleep infinity
+      securityContext:
+        capabilities:
+          add: ["NET_ADMIN"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: customer-a-l2-w1
+  namespace: customer-a
+  annotations:
+    k8s.v1.cni.cncf.io/networks: |-
+      [{
+        "name": "customer-a-macvlan",
+        "namespace": "customer-a",
+        "ips": ["172.16.1.11/24"]
+      }]
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: worker1
+  containers:
+    - name: net
+      image: quay.io/ocp-edge-qe/eco-gotests-network-client:v4.20
+      command:
+        - /bin/sh
+        - -c
+        - ip r del default dev eth0 || true; sleep infinity
+      securityContext:
+        capabilities:
+          add: ["NET_ADMIN"]

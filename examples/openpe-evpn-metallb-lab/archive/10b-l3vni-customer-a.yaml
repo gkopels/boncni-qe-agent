@@ -1,0 +1,21 @@
+apiVersion: network.openperouter.io/v1alpha1
+kind: L3VNI
+metadata:
+  name: customer-a
+  namespace: openshift-openperouter
+spec:
+  vni: 1001
+  vrf: customer-a
+  underlayAddressFamily: IPv4
+  importRTs:
+    - "64514:1001"
+  exportRTs:
+    - "64514:1001"
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
+  hostSession:
+    asn: 64514
+    hostASN: 64515
+    localCIDR:
+      ipv4: 172.16.20.0/24

@@ -1,0 +1,22 @@
+# L2 segment for Multus pods, routed into L3VNI/VRF customer-a (VNI 1001).
+apiVersion: network.openperouter.io/v1alpha1
+kind: L2VNI
+metadata:
+  name: customer-a-l2
+  namespace: openshift-openperouter
+spec:
+  vni: 1101
+  underlayAddressFamily: IPv4
+  gatewayIPs:
+    - 172.16.1.1/24
+  routingDomain:
+    type: L3VNI
+    l3vni:
+      name: customer-a
+  hostMaster:
+    type: LinuxBridge
+    linuxBridge:
+      lifecycle: Managed
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""

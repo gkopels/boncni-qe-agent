@@ -1,0 +1,21 @@
+apiVersion: network.openperouter.io/v1alpha1
+kind: L3VPN
+metadata:
+  name: customer-a
+  namespace: openshift-openperouter
+spec:
+  vrf: customer-a
+  rdAssignedNumber: 1001
+  exportRTs:
+    - "64514:1001"
+  importRTs:
+    - "64520:1001"
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
+  hostSession:
+    asn: 64514
+    hostASN: 64515
+    localCIDR:
+      ipv4: 172.16.20.0/24
+      ipv6: 2001:db8:20::/64

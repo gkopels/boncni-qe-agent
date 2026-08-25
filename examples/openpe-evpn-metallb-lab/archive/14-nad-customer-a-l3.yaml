@@ -1,0 +1,20 @@
+# Multus NAD on L3VNI host-session veth. PE side GW: 172.16.20.1
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: customer-a-l3-macvlan
+  namespace: customer-a
+spec:
+  config: |-
+    {
+      "cniVersion": "0.3.1",
+      "type": "macvlan",
+      "master": "host-e-1001",
+      "mode": "bridge",
+      "ipam": {
+        "type": "static",
+        "routes": [
+          { "dst": "0.0.0.0/0", "gw": "172.16.20.1" }
+        ]
+      }
+    }

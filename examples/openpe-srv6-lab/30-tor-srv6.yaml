@@ -1,0 +1,249 @@
+# Fake ToR as SRv6 leaf (ASN 64520) + EVPN PE for customer-a L2
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openpe-tor-frr
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: tor-ens1f1
+  namespace: openpe-tor-frr
+spec:
+  config: |
+    {
+      "cniVersion": "0.3.1",
+      "name": "tor-ens1f1",
+      "type": "macvlan",
+      "master": "ens1f1np1",
+      "mode": "bridge",
+      "ipam": {
+        "type": "static",
+        "addresses": [
+          { "address": "10.100.100.254/24" },
+          { "address": "fd00:64:100::254/64" }
+        ]
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frr-tor-config
+  namespace: openpe-tor-frr
+data:
+  daemons: |
+    zebra=yes
+    bgpd=yes
+    isisd=yes
+    pathd=yes
+    bfdd=yes
+    ospfd=no
+    ospf6d=no
+    ripd=no
+    ripngd=no
+    pimd=no
+    ldpd=no
+    nhrpd=no
+    eigrpd=no
+    babeld=no
+    sharpd=no
+    pbrd=no
+    fabricd=no
+    vrrpd=no
+    vtysh_enable=yes
+    zebra_options="  -A 127.0.0.1 -s 90000000"
+    bgpd_options="   -A 127.0.0.1"
+    isisd_options="  -A 127.0.0.1"
+    pathd_options="  -A 127.0.0.1"
+    bfdd_options="   -A 127.0.0.1"
+  vtysh.conf: |
+    service integrated-vtysh-config
+  frr.conf: |
+    frr version 8.5
+    frr defaults traditional
+    hostname frr-tor
+    log stdout
+    !
+    ip nht resolve-via-default
+    ipv6 nht resolve-via-default
+    ipv6 forwarding
+    !
+    vrf customer-a
+     vni 1001
+    exit-vrf
+    !
+    interface lo
+     ip address 10.200.201.254/32
+     ipv6 address 2001:db8:1234::1/128
+     ipv6 router isis ISIS
+     isis passive
+    !
+    interface net1
+     ipv6 router isis ISIS
+    !
+    segment-routing
+     srv6
+      locators
+       locator MAIN
+        prefix fd00:0:10::/48 block-len 32 node-len 16
+        behavior usid
+       exit
+      exit
+     exit
+    exit
+    !
+    router isis ISIS
+     is-type level-1
+     net 49.0001.0000.0000.0001.00
+    exit
+    !
+    router bgp 64520
+     bgp router-id 10.200.201.254
+     no bgp ebgp-requires-policy
+     no bgp default ipv4-unicast
+     no bgp network import-check
+     neighbor PE peer-group
+     neighbor PE remote-as 64514
+     neighbor PE update-source fd00:64:100::254
+     neighbor PE capability extended-nexthop
+     neighbor PE ebgp-multihop
+     bgp listen range 2001:db8:1234:5678::/64 peer-group PE
+     neighbor 2001:db8:1234:5678::1 remote-as 64514
+     neighbor 2001:db8:1234:5678::1 peer-group PE
+     neighbor 2001:db8:1234:5678::2 remote-as 64514
+     neighbor 2001:db8:1234:5678::2 peer-group PE
+     neighbor 10.100.100.10 remote-as 64514
+     neighbor 10.100.100.11 remote-as 64514
+     !
+     segment-routing srv6
+      locator MAIN
+     exit
+     !
+     address-family ipv4 unicast
+      network 10.200.201.254/32
+      neighbor 10.100.100.10 activate
+      neighbor 10.100.100.11 activate
+     exit-address-family
+     !
+     address-family ipv4 vpn
+      neighbor PE activate
+      neighbor PE next-hop-self force
+     exit-address-family
+     !
+     address-family ipv6 vpn
+      neighbor PE activate
+      neighbor PE next-hop-self force
+     exit-address-family
+     !
+     address-family l2vpn evpn
+      neighbor 10.100.100.10 activate
+      neighbor 10.100.100.11 activate
+      advertise-all-vni
+     exit-address-family
+    exit
+    !
+    router bgp 64520 vrf customer-a
+     bgp router-id 10.200.201.254
+     sid vpn per-vrf export auto
+     !
+     address-family ipv4 unicast
+      redistribute connected
+      rd vpn export 10.200.201.254:1001
+      rt vpn import 64514:1001
+      rt vpn export 64520:1001
+      export vpn
+      import vpn
+     exit-address-family
+     !
+     address-family ipv6 unicast
+      redistribute connected
+      rd vpn export 10.200.201.254:1001
+      rt vpn import 64514:1001
+      rt vpn export 64520:1001
+      export vpn
+      import vpn
+     exit-address-family
+    exit
+    !
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: frr-tor
+  namespace: openpe-tor-frr
+  labels:
+    app: frr-tor
+  annotations:
+    k8s.v1.cni.cncf.io/networks: tor-ens1f1
+spec:
+  restartPolicy: Always
+  hostPID: true
+  nodeSelector:
+    kubernetes.io/hostname: worker0
+  containers:
+    - name: frr
+      image: quay.io/ocp-edge-qe/frr:8.5.3
+      securityContext:
+        privileged: true
+      volumeMounts:
+        - name: frr-config
+          mountPath: /etc/frr
+      command:
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          VTEP=10.200.201.254
+          L2_VNI=1101
+          BR_L2=br-l2-${L2_VNI}
+          VX_L2=vxlan${L2_VNI}
+          HOST_BR=br-tor-a
+          VETH=veth-tora
+
+          ip link add customer-a type vrf table 1001 2>/dev/null || true
+          ip link set customer-a up
+
+          # L2 EVPN bridge for customer-a (VXLAN) — L3 is SRv6, not VXLAN L3
+          ip link add ${BR_L2} type bridge 2>/dev/null || true
+          ip link set ${BR_L2} master customer-a 2>/dev/null || true
+          ip link add ${VX_L2} type vxlan id ${L2_VNI} dstport 4789 local ${VTEP} nolearning 2>/dev/null || true
+          ip link set ${VX_L2} master ${BR_L2} 2>/dev/null || true
+          ip link set ${VX_L2} type bridge_slave neigh_suppress on learning off 2>/dev/null || true
+          ip link set ${VX_L2} up
+          ip link set ${BR_L2} up
+          ip addr add ${VTEP}/32 dev lo 2>/dev/null || true
+          ip -6 addr add 2001:db8:1234::1/128 dev lo 2>/dev/null || true
+
+          nsenter -t 1 -n ip link add ${HOST_BR} type bridge 2>/dev/null || true
+          nsenter -t 1 -n ip link set ${HOST_BR} up 2>/dev/null || true
+          if ! ip link show ${VETH}-c >/dev/null 2>&1; then
+            ip link add ${VETH}-c type veth peer name ${VETH}-h
+            ip link set ${VETH}-c master ${BR_L2}
+            ip link set ${VETH}-c up
+            ip link set ${VETH}-h netns 1
+            nsenter -t 1 -n ip link set ${VETH}-h master ${HOST_BR}
+            nsenter -t 1 -n ip link set ${VETH}-h up
+          fi
+
+          if [ -x /usr/lib/frr/docker-start ]; then
+            /usr/lib/frr/docker-start &
+          elif [ -x /usr/lib/frr/frrinit.sh ]; then
+            /usr/lib/frr/frrinit.sh start
+          else
+            /usr/lib/frr/zebra -d -A 127.0.0.1
+            /usr/lib/frr/bgpd -d -A 127.0.0.1
+            /usr/lib/frr/isisd -d -A 127.0.0.1 || true
+            /usr/lib/frr/bfdd -d -A 127.0.0.1 || true
+          fi
+          sleep 3
+          vtysh -c 'write memory' 2>/dev/null || true
+          sleep infinity
+  volumes:
+    - name: frr-config
+      configMap:
+        name: frr-tor-config

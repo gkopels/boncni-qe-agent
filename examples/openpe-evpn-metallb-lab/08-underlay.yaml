@@ -1,0 +1,25 @@
+apiVersion: network.openperouter.io/v1alpha1
+kind: Underlay
+metadata:
+  name: underlay
+  namespace: openshift-openperouter
+spec:
+  asn: 64514
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
+  routerIDCIDR: 10.200.200.0/24
+  tunnelEndpoint:
+    cidrs:
+      - 10.200.201.0/24
+
+  interfaces:
+    - type: NetworkDevice
+      networkDevice:
+        interfaceName: ens1f0np0
+  neighbors:
+    - asn: 64512
+      address: 10.100.100.254
+      addressFamilies:
+        - type: ipv4unicast
+        - type: evpn
